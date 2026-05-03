@@ -1,7 +1,7 @@
+.git/
 __pycache__/
-*.py[cod]
+*.pyc
 *.png
-!media/*.png
 *.onnx
 *.engine
 *.plan
@@ -9,5 +9,5 @@ __pycache__/
 *.pt
 *.pth
 *.bin
-docker/torch-jetson.whl*
-.DS_Store
+media/
+docs/

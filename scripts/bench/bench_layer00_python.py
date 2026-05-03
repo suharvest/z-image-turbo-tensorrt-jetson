@@ -8,7 +8,7 @@ import torch
 
 ENGINE = os.environ.get(
     "ENGINE",
-    "/home/harvest/models/axera-onnx/trt-engines-bf16/layer_00_fp16.engine",
+    os.path.expanduser("~/models/axera-onnx/trt-engines-bf16/layer_00_fp16.engine"),
 )
 WARMUP = int(os.environ.get("WARMUP", "10"))
 ITERS = int(os.environ.get("ITERS", "100"))

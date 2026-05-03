@@ -1,5 +1,9 @@
 # Z-Image-Turbo TensorRT Acceleration — Status
 
+> Historical engineering log. For a fresh reproduction path, start with
+> [README.md](../README.md) and [REPRODUCTION.md](REPRODUCTION.md). Paths in
+> this file may refer to the original validation machines.
+
 ## Overview
 Accelerating Z-Image-Turbo (6B DiT, 30 transformer layers) on NVIDIA Jetson Orin NX (16GB RAM) via TensorRT 10.3.
 

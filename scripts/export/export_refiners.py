@@ -35,7 +35,7 @@ IMG_W_TOKENS = LATENT_W // 2
 IMG_TOKENS = IMG_H_TOKENS * IMG_W_TOKENS
 OUTPUT_DIR = os.environ.get(
     "OUTPUT_DIR",
-    "/home/harve/trt-work/onnx-layers" if RESOLUTION == 512 else f"/home/harve/trt-work/onnx-{RESOLUTION}",
+    "onnx-512" if RESOLUTION == 512 else f"onnx-{RESOLUTION}",
 )
 FP16_CLAMP = 60000.0
 B, DIM, HDIM, ADIM = 1, 3840, 128, 256

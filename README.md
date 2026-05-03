@@ -75,20 +75,29 @@ RESOLUTION=512 scripts/run/run_3drope_basic_refiner.sh
 Output defaults:
 
 ```text
-384: /home/harvest/z-image-output/output_384.png
-512: /home/harvest/z-image-output/output_3drope.png
+384: $HOME/z-image-output/output_384.png
+512: $HOME/z-image-output/output_3drope.png
 ```
 
 Override host paths if your layout differs:
 
 ```bash
+DOCKER_IMAGE=z-image-jetson:latest \
 MODEL_ROOT_HOST=/path/to/models \
+MODEL_DIR=/models/z-image-turbo-fp8-diffusers \
 ENGINE_DIR_384_HOST=/path/to/trt-engines-384-bf16 \
 ENGINE_DIR_512_HOST=/path/to/trt-engines-bf16 \
 OUTPUT_DIR_HOST=/path/to/output \
+CUDA_HOST=/usr/local/cuda-12.6 \
+TRT_PY_HOST=/usr/lib/python3.10/dist-packages/tensorrt \
+NVIDIA_PIP_HOST=/path/to/python/site-packages/nvidia \
 RESOLUTION=384 \
 scripts/run/run_3drope_basic_refiner.sh
 ```
+
+`MODEL_ROOT_HOST` is mounted into the container as `/models`. The default
+`MODEL_DIR` expects the diffusers model at `/models/z-image-turbo-fp8-diffusers`.
+Set `MODEL_DIR` if your model folder has a different name.
 
 ## Img2Img
 
@@ -152,22 +161,16 @@ python3 scripts/export/export_refiners.py
 Build each ONNX file on Jetson:
 
 ```bash
-mkdir -p /home/user/models/axera-onnx/trt-engines-384-bf16
-cd /home/user/trt-work/onnx-384
-
-for f in *.onnx; do
-  name="$(basename "$f" .onnx)"
-  /usr/src/tensorrt/bin/trtexec \
-    --onnx="$f" \
-    --saveEngine="/home/user/models/axera-onnx/trt-engines-384-bf16/${name}.engine" \
-    --bf16 \
-    --timingCacheFile=/tmp/trt_cache.txt
-done
+ONNX_DIR=/home/user/trt-work/onnx-384 \
+ENGINE_DIR=/home/user/models/axera-onnx/trt-engines-384-bf16 \
+scripts/export/build_trt_engines.sh
 ```
 
 See [docs/TRT_STATUS.md](docs/TRT_STATUS.md) for the full validated build and
 performance notes, and [docs/ARTIFACTS.md](docs/ARTIFACTS.md) for suggested
 ONNX/engine release layout.
+
+For a newcomer-oriented checklist, see [docs/REPRODUCTION.md](docs/REPRODUCTION.md).
 
 ## Architecture
 
@@ -201,6 +204,21 @@ Validated target:
 - TensorRT 10.3
 - CUDA 12.6 host libraries
 - Docker image with PyTorch, diffusers, transformers, Pillow, and TensorRT Python bindings
+
+The Docker image is only the runtime environment. It does not contain model
+weights, ONNX files, TensorRT engines, or generated outputs. `docker/Dockerfile.jetson`
+is provided as a starting template, but Jetson PyTorch wheels depend on your
+JetPack/CUDA version. If you already have a working Jetson PyTorch image, set
+`DOCKER_IMAGE` and use that instead.
+
+Example image build flow:
+
+```bash
+docker build \
+  --build-arg TORCH_WHEEL_URL=https://example.com/path/to/jetson-torch.whl \
+  -f docker/Dockerfile.jetson \
+  -t z-image-jetson:latest .
+```
 
 Export machine:
 

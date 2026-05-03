@@ -74,7 +74,9 @@ static int64_t volume(nvinfer1::Dims dims) {
 
 int main(int argc, char** argv) {
   const char* envEngine = std::getenv("ENGINE");
-  std::string enginePath = envEngine ? envEngine : "/home/harvest/models/axera-onnx/trt-engines-bf16/layer_00_fp16.engine";
+  const char* home = std::getenv("HOME");
+  std::string defaultEngine = std::string(home ? home : ".") + "/models/axera-onnx/trt-engines-bf16/layer_00_fp16.engine";
+  std::string enginePath = envEngine ? envEngine : defaultEngine;
   int warmup = std::getenv("WARMUP") ? std::atoi(std::getenv("WARMUP")) : 10;
   int iters = std::getenv("ITERS") ? std::atoi(std::getenv("ITERS")) : 100;
 

@@ -1,0 +1,43 @@
+FROM ubuntu:22.04
+
+LABEL description="Z-Image-Turbo TensorRT runtime for Jetson"
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV PYTHONUNBUFFERED=1
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3 \
+    python3-pip \
+    python3-dev \
+    git \
+    curl \
+    wget \
+    build-essential \
+    libopenblas-dev \
+    libgomp1 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Jetson PyTorch wheels are not distributed through normal PyPI in a stable
+# cross-JetPack way. If you have a wheel URL, pass it at build time:
+#   docker build --build-arg TORCH_WHEEL_URL=https://.../torch.whl ...
+# Otherwise the image still builds, but torch must be installed before runtime.
+ARG TORCH_WHEEL_URL=
+RUN if [ -n "$TORCH_WHEEL_URL" ]; then \
+      python3 -m pip install --no-cache-dir "$TORCH_WHEEL_URL"; \
+    else \
+      echo "No TORCH_WHEEL_URL supplied. Install a Jetson-compatible torch wheel before runtime."; \
+    fi
+
+RUN python3 -m pip install --no-cache-dir --upgrade pip && \
+    python3 -m pip install --no-cache-dir \
+      git+https://github.com/huggingface/diffusers \
+      transformers \
+      accelerate \
+      safetensors \
+      sentencepiece \
+      protobuf \
+      numpy \
+      pillow \
+      onnx
+
+WORKDIR /workspace

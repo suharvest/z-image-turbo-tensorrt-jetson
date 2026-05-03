@@ -3,14 +3,16 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PIPELINE_PATH="${PIPELINE_PATH:-$SCRIPT_DIR/pipeline_trt_v2.py}"
-if [ ! -f "$PIPELINE_PATH" ] && [ -f /tmp/pipe_3drope.py ]; then
-  PIPELINE_PATH="/tmp/pipe_3drope.py"
-fi
 
-MODEL_ROOT_HOST="${MODEL_ROOT_HOST:-/home/harvest/models}"
-ENGINE_DIR_512_HOST="${ENGINE_DIR_512_HOST:-/home/harvest/models/axera-onnx/trt-engines-bf16}"
-ENGINE_DIR_384_HOST="${ENGINE_DIR_384_HOST:-/home/harvest/models/axera-onnx/trt-engines-384-bf16}"
-OUTPUT_DIR_HOST="${OUTPUT_DIR_HOST:-/home/harvest/z-image-output}"
+MODEL_ROOT_HOST="${MODEL_ROOT_HOST:-$HOME/models}"
+ENGINE_DIR_512_HOST="${ENGINE_DIR_512_HOST:-$HOME/models/axera-onnx/trt-engines-bf16}"
+ENGINE_DIR_384_HOST="${ENGINE_DIR_384_HOST:-$HOME/models/axera-onnx/trt-engines-384-bf16}"
+OUTPUT_DIR_HOST="${OUTPUT_DIR_HOST:-$HOME/z-image-output}"
+DOCKER_IMAGE="${DOCKER_IMAGE:-z-image-jetson:latest}"
+MODEL_DIR="${MODEL_DIR:-/models/z-image-turbo-fp8-diffusers}"
+CUDA_HOST="${CUDA_HOST:-/usr/local/cuda-12.6}"
+TRT_PY_HOST="${TRT_PY_HOST:-/usr/lib/python3.10/dist-packages/tensorrt}"
+NVIDIA_PIP_HOST="${NVIDIA_PIP_HOST:-$HOME/.local/lib/python3.10/site-packages/nvidia}"
 
 RESOLUTION="${RESOLUTION:-512}"
 if [ -z "${ENGINE_DIR:-}" ]; then
@@ -41,8 +43,50 @@ if [ -z "${NUM_STEPS:-}" ]; then
     NUM_STEPS="4"
   fi
 fi
+
+if [ "$RESOLUTION" != "384" ] && [ "$RESOLUTION" != "512" ]; then
+  echo "Unsupported RESOLUTION=$RESOLUTION. Use 384 or 512." >&2
+  exit 1
+fi
+
+if [ ! -f "$PIPELINE_PATH" ]; then
+  echo "Pipeline script not found: $PIPELINE_PATH" >&2
+  exit 1
+fi
+
+if [ ! -d "$MODEL_ROOT_HOST" ]; then
+  echo "Model root not found: $MODEL_ROOT_HOST" >&2
+  echo "Set MODEL_ROOT_HOST to the host directory that contains the Z-Image model." >&2
+  exit 1
+fi
+
+if [ "$RESOLUTION" = "384" ]; then
+  ENGINE_DIR_HOST="$ENGINE_DIR_384_HOST"
+else
+  ENGINE_DIR_HOST="$ENGINE_DIR_512_HOST"
+fi
+if [ ! -d "$ENGINE_DIR_HOST" ]; then
+  echo "TensorRT engine directory not found for ${RESOLUTION}p mode: $ENGINE_DIR_HOST" >&2
+  echo "Build engines first or set ENGINE_DIR_${RESOLUTION}_HOST." >&2
+  exit 1
+fi
+
+for required_mount in "$CUDA_HOST" "$TRT_PY_HOST" "$NVIDIA_PIP_HOST"; do
+  if [ ! -d "$required_mount" ]; then
+    echo "Required host mount not found: $required_mount" >&2
+    echo "Set CUDA_HOST, TRT_PY_HOST, or NVIDIA_PIP_HOST for this Jetson environment." >&2
+    exit 1
+  fi
+done
+
+mkdir -p "$OUTPUT_DIR_HOST"
+
 EXTRA_MOUNTS=()
 if [ -n "${INPUT_IMAGE_PATH:-}" ]; then
+  if [ ! -f "$INPUT_IMAGE_PATH" ]; then
+    echo "Input image not found: $INPUT_IMAGE_PATH" >&2
+    exit 1
+  fi
   EXTRA_MOUNTS+=("-v" "$INPUT_IMAGE_PATH:/input/init_image:ro")
   INIT_IMAGE="/input/init_image"
 fi
@@ -50,9 +94,9 @@ fi
 docker run --rm --privileged --network=host \
   -v /usr/lib/aarch64-linux-gnu:/host-libs:ro \
   -v /etc/alternatives:/etc/alternatives:ro \
-  -v /usr/local/cuda-12.6:/usr/local/cuda:ro \
-  -v /home/harvest/.local/lib/python3.10/site-packages/nvidia:/usr/local/nvidia-pip:ro \
-  -v /usr/lib/python3.10/dist-packages/tensorrt:/usr/local/trt-py:ro \
+  -v "$CUDA_HOST:/usr/local/cuda:ro" \
+  -v "$NVIDIA_PIP_HOST:/usr/local/nvidia-pip:ro" \
+  -v "$TRT_PY_HOST:/usr/local/trt-py:ro" \
   -v "$MODEL_ROOT_HOST:/models:ro" \
   -v "$ENGINE_DIR_512_HOST:/engines-bf16:ro" \
   -v "$ENGINE_DIR_384_HOST:/engines-384-bf16:ro" \
@@ -61,6 +105,7 @@ docker run --rm --privileged --network=host \
   "${EXTRA_MOUNTS[@]}" \
   -e RESOLUTION="$RESOLUTION" \
   -e ENGINE_DIR="$ENGINE_DIR" \
+  -e MODEL_DIR="$MODEL_DIR" \
   -e OUTPUT_PATH="$OUTPUT_PATH" \
   -e PROMPT="${PROMPT:-A cute orange tabby cat sitting on a sunny windowsill, soft natural lighting, photorealistic, high detail}" \
   -e INIT_IMAGE="${INIT_IMAGE:-}" \
@@ -75,4 +120,4 @@ docker run --rm --privileged --network=host \
   -e NUM_STEPS="$NUM_STEPS" \
   -e PYTHONPATH=/usr/local/trt-py \
   -e LD_LIBRARY_PATH="/usr/local/cuda/lib64:/usr/local/cuda/targets/aarch64-linux/lib:/usr/local/cuda/nvvm/lib64:/host-libs:/host-libs/tegra:/host-libs/openblas-pthread:/usr/local/nvidia-pip/cusparselt/lib" \
-  z-image-jetson:latest python3 -u /workspace/test.py
+  "$DOCKER_IMAGE" python3 -u /workspace/test.py

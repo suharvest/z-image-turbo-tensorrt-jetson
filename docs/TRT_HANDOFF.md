@@ -1,5 +1,9 @@
 # Z-Image-Turbo TensorRT Handoff Document
 
+> Historical engineering log. For a fresh reproduction path, start with
+> [README.md](../README.md) and [REPRODUCTION.md](REPRODUCTION.md). Paths in
+> this file may refer to the original validation machines.
+
 ## TL;DR
 
 Z-Image-Turbo (6B DiT) on Jetson Orin NX via TensorRT BF16: split-engine pipeline now runs end-to-end and generates correct cat images at 512x512 and 384x384. PyTorch baseline on wsl2 remains available for ONNX export and quality comparison.

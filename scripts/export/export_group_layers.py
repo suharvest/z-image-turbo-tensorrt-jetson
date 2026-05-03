@@ -41,12 +41,9 @@ def _onnx_pad_sequence(sequences, batch_first=False, padding_value=0.0):
 
 torch.nn.utils.rnn.pad_sequence = _onnx_pad_sequence
 
-MODEL_PATH = os.environ.get(
-    "MODEL_PATH",
-    "/home/harve/models/huggingface/models--Tongyi-MAI--Z-Image-Turbo/snapshots/"
-    "f332072aa78be7aecdf3ee76d5c247082da564a6/transformer",
-)
-OUTPUT_DIR = os.environ.get("OUTPUT_DIR", "/home/harve/trt-work/onnx-layers")
+MODEL_PATH = os.environ.get("MODEL_PATH", "Tongyi-MAI/Z-Image-Turbo")
+TRANSFORMER_SUBFOLDER = os.environ.get("TRANSFORMER_SUBFOLDER", "transformer")
+OUTPUT_DIR = os.environ.get("OUTPUT_DIR", "onnx-group-layers")
 START_LAYER = int(os.environ.get("START_LAYER", "0"))
 GROUP_SIZE = int(os.environ.get("GROUP_SIZE", "5"))
 FP16_CLAMP = 60000.0
@@ -55,6 +52,7 @@ B, SEQ, DIM, HDIM, ADIM = 1, 1152, 3840, 128, 256
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 print(f"PyTorch: {torch.__version__}, CUDA: {torch.cuda.is_available()}", flush=True)
+print(f"Model: {MODEL_PATH} subfolder={TRANSFORMER_SUBFOLDER or '<none>'}", flush=True)
 print(f"GPU: {torch.cuda.get_device_name(0)}, Memory free: {torch.cuda.mem_get_info()[0]/1024**3:.1f} GB", flush=True)
 
 from diffusers import ZImageTransformer2DModel
@@ -132,10 +130,10 @@ def main():
     onnx_path = os.path.join(OUTPUT_DIR, name + ".onnx")
 
     print(f"Loading transformer CPU: {MODEL_PATH}", flush=True)
-    transformer = ZImageTransformer2DModel.from_pretrained(
-        MODEL_PATH,
-        torch_dtype=torch.float32,
-    ).to("cpu")
+    load_kwargs = {"torch_dtype": torch.float32}
+    if TRANSFORMER_SUBFOLDER:
+        load_kwargs["subfolder"] = TRANSFORMER_SUBFOLDER
+    transformer = ZImageTransformer2DModel.from_pretrained(MODEL_PATH, **load_kwargs).to("cpu")
     transformer.eval()
 
     layers = []
