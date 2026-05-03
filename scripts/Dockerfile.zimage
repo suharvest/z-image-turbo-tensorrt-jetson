@@ -1,0 +1,46 @@
+FROM docker.m.daocloud.io/library/ubuntu:22.04
+
+LABEL description="Z-Image-Turbo inference container for Jetson Orin"
+LABEL jetson="r36.4"
+
+# Suppress interactive tzdata config
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3 python3-pip python3-dev \
+    wget curl git \
+    build-essential \
+    libssl-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy and install PyTorch wheel (pre-downloaded)
+COPY torch-2.6.0+cu126-cp310-cp310-linux_aarch64.whl /tmp/
+RUN pip3 install --no-cache-dir /tmp/torch-2.6.0+cu126-cp310-cp310-linux_aarch64.whl && \
+    rm /tmp/*.whl
+
+# Build args for China network proxy
+ARG PIP_INDEX_URL=https://pypi.org/simple
+ARG GIT_PROXY=
+
+# Install diffusers from source (needs latest for ZImagePipeline)
+# Use GIT_PROXY for China network, eg. --build-arg GIT_PROXY=http://127.0.0.1:7890
+RUN if [ -n "$GIT_PROXY" ]; then \
+        git config --global http.proxy "$GIT_PROXY" && \
+        git config --global https.proxy "$GIT_PROXY"; \
+    fi && \
+    pip3 install --no-cache-dir \
+        git+https://github.com/huggingface/diffusers \
+        transformers \
+        accelerate \
+        safetensors \
+        sentencepiece \
+        protobuf \
+        numpy \
+        pillow && \
+    if [ -n "$GIT_PROXY" ]; then \
+        git config --global --unset http.proxy; \
+        git config --global --unset https.proxy; \
+    fi
+
+WORKDIR /workspace

@@ -1,0 +1,19 @@
+version: "3.9"
+
+services:
+  zimage:
+    build:
+      context: .
+      dockerfile: Dockerfile.zimage
+    image: z-image-turbo:latest
+    container_name: zimage-turbo
+    runtime: nvidia
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+      - HF_ENDPOINT=https://hf-mirror.com
+    volumes:
+      - ~/models:/models:ro
+      - ~/z-image-output:/output
+    working_dir: /workspace
+    command: tail -f /dev/null

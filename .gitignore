@@ -1,0 +1,11 @@
+__pycache__/
+*.py[cod]
+*.png
+*.onnx
+*.engine
+*.plan
+*.safetensors
+*.pt
+*.pth
+*.bin
+.DS_Store
