@@ -1,6 +1,17 @@
 #!/bin/bash
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PIPELINE_PATH="${PIPELINE_PATH:-$SCRIPT_DIR/pipeline_trt_v2.py}"
+if [ ! -f "$PIPELINE_PATH" ] && [ -f /tmp/pipe_3drope.py ]; then
+  PIPELINE_PATH="/tmp/pipe_3drope.py"
+fi
+
+MODEL_ROOT_HOST="${MODEL_ROOT_HOST:-/home/harvest/models}"
+ENGINE_DIR_512_HOST="${ENGINE_DIR_512_HOST:-/home/harvest/models/axera-onnx/trt-engines-bf16}"
+ENGINE_DIR_384_HOST="${ENGINE_DIR_384_HOST:-/home/harvest/models/axera-onnx/trt-engines-384-bf16}"
+OUTPUT_DIR_HOST="${OUTPUT_DIR_HOST:-/home/harvest/z-image-output}"
+
 RESOLUTION="${RESOLUTION:-512}"
 if [ -z "${ENGINE_DIR:-}" ]; then
   if [ "$RESOLUTION" = "384" ]; then
@@ -42,11 +53,11 @@ docker run --rm --privileged --network=host \
   -v /usr/local/cuda-12.6:/usr/local/cuda:ro \
   -v /home/harvest/.local/lib/python3.10/site-packages/nvidia:/usr/local/nvidia-pip:ro \
   -v /usr/lib/python3.10/dist-packages/tensorrt:/usr/local/trt-py:ro \
-  -v /home/harvest/models:/models:ro \
-  -v /home/harvest/models/axera-onnx/trt-engines-bf16:/engines-bf16:ro \
-  -v /home/harvest/models/axera-onnx/trt-engines-384-bf16:/engines-384-bf16:ro \
-  -v /home/harvest/z-image-output:/output \
-  -v /tmp/pipe_3drope.py:/workspace/test.py:ro \
+  -v "$MODEL_ROOT_HOST:/models:ro" \
+  -v "$ENGINE_DIR_512_HOST:/engines-bf16:ro" \
+  -v "$ENGINE_DIR_384_HOST:/engines-384-bf16:ro" \
+  -v "$OUTPUT_DIR_HOST:/output" \
+  -v "$PIPELINE_PATH:/workspace/test.py:ro" \
   "${EXTRA_MOUNTS[@]}" \
   -e RESOLUTION="$RESOLUTION" \
   -e ENGINE_DIR="$ENGINE_DIR" \

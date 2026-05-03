@@ -11,8 +11,8 @@ Z-Image-Turbo (6B DiT) on Jetson Orin NX via TensorRT BF16: split-engine pipelin
 Root cause of the blurry/multi-exposure output was the `noise_refiner` export/call path. Z-Image basic mode calls `noise_refiner` with `noise_mask=None`, so the block must use global `adaln_input` modulation. The previous TRT export only implemented the per-token `noise_mask/t_noisy/t_clean` branch and the pipeline forced `noise_mask=ones`, which did not match PyTorch forward semantics.
 
 Fixed files:
-- `export_refiners.py`: re-exported `noise_refiner_00/01` with inputs `x, attn_mask, freqs_cis, adaln_input`.
-- `scripts/pipeline_trt_v2.py`: calls basic-mode `noise_refiner` with `adaln_input`, loads context refiners, and allocates TRT outputs by engine dtype.
+- `scripts/export/export_refiners.py`: re-exported `noise_refiner_00/01` with inputs `x, attn_mask, freqs_cis, adaln_input`.
+- `scripts/run/pipeline_trt_v2.py`: calls basic-mode `noise_refiner` with `adaln_input`, loads context refiners, and allocates TRT outputs by engine dtype.
 - orin-nx `/tmp/pipe_3drope.py` and `/tmp/run_3drope.sh`: updated to the fixed pipeline.
 
 Rebuilt engines on orin-nx:
@@ -145,7 +145,7 @@ VAE Decode:
 3. **3D RoPE**: Correct multi-axis positional encoding matching model config
 4. **Token order**: Image first, prompt second
 5. **BF16 engines**: FP16 softmax overflow killed attention; BF16 (8-bit exponent) fixes it
-6. **Codex pipeline fixes** (applied to `scripts/pipeline_trt_v2.py`):
+6. **Codex pipeline fixes** (applied to `scripts/run/pipeline_trt_v2.py`):
    - timestep = `1000 - scheduler_t` (diffusers convention)
    - noise_pred negated before scheduler
    - FlowMatch scheduler with `mu=calculate_shift(image_tokens)`
@@ -190,9 +190,9 @@ Historical issue: blurry/multi-exposure output was caused by exporting/calling `
 ### Local (Mac)
 | Path | Purpose |
 |------|---------|
-| `scripts/pipeline_trt_v2.py` | Reference pipeline (with codex fixes) |
-| `TRT_STATUS.md` | Previous status document |
-| `TRT_HANDOFF.md` | This document |
+| `scripts/run/pipeline_trt_v2.py` | Reference pipeline (with codex fixes) |
+| `docs/TRT_STATUS.md` | Previous status document |
+| `docs/TRT_HANDOFF.md` | This document |
 
 ---
 

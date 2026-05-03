@@ -1,4 +1,0 @@
-File "<string>", line 3
-    m = onnx.load(/home/harvest/models/axera-onnx/onnx-new/layer_00_fp16.onnx)
-                  ^
-SyntaxError: invalid syntax

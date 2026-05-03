@@ -32,7 +32,7 @@ Validated full 8-step run with minimal PyTorch load, delayed VAE, TRT release be
 - Per-step times: 16.9s, 14.9s, 15.0s, 15.4s, 15.6s, 14.8s, 15.2s, 15.3s
 - Output: `/home/harvest/z-image-output/output_3drope.png`
 
-`MAX_CACHED_LAYERS=19` loads but OOM-kills during step 1. `MAX_CACHED_LAYERS=20/30` OOM before denoise. Default cache is now 18 in `scripts/pipeline_trt_v2.py` and `/tmp/run_3drope.sh`.
+`MAX_CACHED_LAYERS=19` loads but OOM-kills during step 1. `MAX_CACHED_LAYERS=20/30` OOM before denoise. Default cache is now 18 in `scripts/run/pipeline_trt_v2.py` and `/tmp/run_3drope.sh`.
 
 512 step sweep with cache 18:
 

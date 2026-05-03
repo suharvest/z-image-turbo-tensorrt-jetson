@@ -1,4 +1,0 @@
-File "<string>", line 6
-    orig = safe_open(/models/z-image-turbo/transformer/diffusion_pytorch_model-00001-of-00003.safetensors, framework=pt)
-                                                                               ^^^^
-SyntaxError: leading zeros in decimal integer literals are not permitted; use an 0o prefix for octal integers

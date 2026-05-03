@@ -1,0 +1,18 @@
+Z-Image-Turbo TensorRT for Jetson
+
+This repository contains code and documentation for exporting and running
+Z-Image-Turbo with TensorRT on Jetson devices.
+
+The upstream model, Tongyi-MAI/Z-Image-Turbo, is provided by Tongyi-MAI under
+the Apache License 2.0:
+
+  https://huggingface.co/Tongyi-MAI/Z-Image-Turbo
+
+Model weights, exported ONNX files, and TensorRT engine files are not included
+in this repository. If you download, export, modify, or redistribute those
+artifacts, follow the upstream model license and any applicable terms from the
+model provider.
+
+This project also depends on third-party software including PyTorch,
+Hugging Face diffusers, transformers, ONNX, CUDA, and NVIDIA TensorRT. Those
+projects are governed by their own licenses.
