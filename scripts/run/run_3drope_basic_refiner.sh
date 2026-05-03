@@ -112,6 +112,7 @@ docker run --rm --privileged --network=host \
   -e STRENGTH="${STRENGTH:-0.6}" \
   -e USE_TRT_VAE="${USE_TRT_VAE:-0}" \
   -e VAE_ENGINE_DIR="${VAE_ENGINE_DIR:-$ENGINE_DIR}" \
+  -e DEBUG_TENSOR_STATS="${DEBUG_TENSOR_STATS:-0}" \
   -e MINIMAL_PYTORCH_LOAD="${MINIMAL_PYTORCH_LOAD:-1}" \
   -e DELAY_LOAD_VAE="${DELAY_LOAD_VAE:-1}" \
   -e FREE_TRT_BEFORE_VAE="${FREE_TRT_BEFORE_VAE:-1}" \

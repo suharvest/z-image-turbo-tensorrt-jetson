@@ -88,9 +88,10 @@ ENGINE_DIR=/path/to/trt-engines-384-bf16 \
 scripts/export/build_trt_engines.sh
 ```
 
-The build script intentionally uses `--bf16`. FP16 is not the validated
-transformer path on this pipeline. VAE ONNX exports are named `*_fp16.onnx` but
-can live in the same directory and be built by the same script.
+The build script intentionally uses `--bf16`. FP16 is not the validated path for
+the transformer or VAE decoder on this pipeline. VAE ONNX exports are named
+`*_fp16.onnx` because the exported tensors are FP16, but `vae_decoder_fp16.onnx`
+produced NaNs on Orin NX when built with `trtexec --fp16`.
 
 ## 5. Run text-to-image
 

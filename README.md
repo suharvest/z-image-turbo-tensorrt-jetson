@@ -179,6 +179,10 @@ ENGINE_DIR=/home/user/models/axera-onnx/trt-engines-384-bf16 \
 scripts/export/build_trt_engines.sh
 ```
 
+Keep the default BF16 TensorRT build for VAE engines. The VAE ONNX filenames
+include `fp16` because the exported tensors are FP16, but the decoder engine
+produced NaNs on Orin NX when built with `trtexec --fp16`.
+
 Run with TRT VAE:
 
 ```bash
@@ -254,6 +258,8 @@ Export machine:
 - Runtime still uses PyTorch for the text encoder. The VAE can be moved to
   TensorRT with `USE_TRT_VAE=1` after exporting/building VAE engines.
 - Docker launcher currently assumes Jetson-style host CUDA/TensorRT library mounts.
+- If `USE_TRT_VAE=1` produces a black image, rebuild `vae_decoder_fp16.onnx`
+  with BF16 and rerun with `DEBUG_TENSOR_STATS=1` to check for NaNs.
 
 ## License
 

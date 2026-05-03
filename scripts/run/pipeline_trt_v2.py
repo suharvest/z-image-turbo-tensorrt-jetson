@@ -31,6 +31,7 @@ class TRTEngine:
         self.context = self.engine.create_execution_context()
         self.stream = torch.cuda.Stream()
         self.inputs = []
+        self.input_dtypes = {}
         self.outputs = {}
         self.output_dtypes = {}
         for i in range(self.engine.num_io_tensors):
@@ -39,6 +40,7 @@ class TRTEngine:
             mode = self.engine.get_tensor_mode(name)
             if mode == trt.TensorIOMode.INPUT:
                 self.inputs.append(name)
+                self.input_dtypes[name] = self._torch_dtype(self.engine.get_tensor_dtype(name))
             else:
                 self.outputs[name] = shape
                 self.output_dtypes[name] = self._torch_dtype(self.engine.get_tensor_dtype(name))
@@ -62,8 +64,10 @@ class TRTEngine:
     def __call__(self, **tensors):
         """Run inference. Keys must match engine input names."""
         output_tensors = tensors.pop("_outputs", None)
+        bound_inputs = []
         for name in self.inputs:
-            t = tensors[name].contiguous().cuda()
+            t = tensors[name].to(dtype=self.input_dtypes[name], device="cuda").contiguous()
+            bound_inputs.append(t)
             self.context.set_tensor_address(name, t.data_ptr())
             self.context.set_input_shape(name, tuple(t.shape))
         result = {}
@@ -378,6 +382,15 @@ class TRTZImagePipelineV2:
     def _decode_latent(self, latent):
         self._load_vae_config()
         latent = (latent / self.vae_scale) + self.vae_shift
+        if os.environ.get("DEBUG_TENSOR_STATS", "0") == "1":
+            print(
+                "  decode latent stats:",
+                f"dtype={latent.dtype}",
+                f"min={torch.nan_to_num(latent).min().item():.4f}",
+                f"max={torch.nan_to_num(latent).max().item():.4f}",
+                f"nan={torch.isnan(latent).any().item()}",
+                flush=True,
+            )
         if self.use_trt_vae:
             path = self._engine_path("vae_decoder", self.vae_engine_dir)
             if not os.path.exists(path):
@@ -385,6 +398,15 @@ class TRTZImagePipelineV2:
             t0 = time.time()
             vae_decoder = TRTEngine(path)
             image = vae_decoder(latent=latent.to(torch.float16))["image"]
+            if os.environ.get("DEBUG_TENSOR_STATS", "0") == "1":
+                print(
+                    "  TRT VAE image stats:",
+                    f"dtype={image.dtype}",
+                    f"min={torch.nan_to_num(image).min().item():.4f}",
+                    f"max={torch.nan_to_num(image).max().item():.4f}",
+                    f"nan={torch.isnan(image).any().item()}",
+                    flush=True,
+                )
             print(f"  TRT VAE decoded in {time.time()-t0:.1f}s", flush=True)
             del vae_decoder
             return image
@@ -393,6 +415,15 @@ class TRTZImagePipelineV2:
             self._load_vae()
         with torch.no_grad():
             image = self.vae.decode(latent.to(torch.bfloat16)).sample
+        if os.environ.get("DEBUG_TENSOR_STATS", "0") == "1":
+            print(
+                "  PyTorch VAE image stats:",
+                f"dtype={image.dtype}",
+                f"min={torch.nan_to_num(image).min().item():.4f}",
+                f"max={torch.nan_to_num(image).max().item():.4f}",
+                f"nan={torch.isnan(image).any().item()}",
+                flush=True,
+            )
         return image
 
     def encode_prompt(self, prompt):

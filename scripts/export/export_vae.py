@@ -9,6 +9,19 @@ import os
 
 import torch
 import torch.nn as nn
+
+import torch.distributed as dist
+
+if not hasattr(dist, "device_mesh"):
+    dist.device_mesh = type("device_mesh", (), {"DeviceMesh": type("FakeDM", (), {})})
+try:
+    import torch._dynamo.utils as dynamo_utils
+
+    if not hasattr(dynamo_utils, "NP_SUPPORTED_MODULES"):
+        dynamo_utils.NP_SUPPORTED_MODULES = {}
+except Exception:
+    pass
+
 from diffusers import AutoencoderKL
 
 
