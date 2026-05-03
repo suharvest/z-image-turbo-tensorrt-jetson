@@ -56,8 +56,11 @@ Cache limits on Orin NX 16GB:
 
 ## Quickstart
 
-This repo does not ship model weights, ONNX files, or TensorRT engines. You need
-to download the upstream model and build engines for your target Jetson first.
+This repo does not commit model weights, ONNX files, or TensorRT engines to
+normal git because each resolution is roughly 12GB of generated artifacts. You
+can reproduce them from the public upstream model, or publish/download them from
+a separate Hugging Face/Git LFS artifact repo. See
+[docs/ARTIFACTS.md](docs/ARTIFACTS.md).
 
 For a host that already has the model and engines in the expected locations:
 
@@ -119,7 +122,7 @@ media/             README demo images
 
 ## Build Engines
 
-The high-level flow is:
+The high-level flow is fully reproducible from the public upstream model:
 
 ```text
 1. Download Tongyi-MAI/Z-Image-Turbo on an export machine
@@ -132,10 +135,14 @@ The high-level flow is:
 Example 384 export on a CUDA workstation:
 
 ```bash
+MODEL_PATH=Tongyi-MAI/Z-Image-Turbo \
+TRANSFORMER_SUBFOLDER=transformer \
 RESOLUTION=384 \
 OUTPUT_DIR=/home/user/trt-work/onnx-384 \
 python3 scripts/export/export_all_layers_fp16.py
 
+MODEL_PATH=Tongyi-MAI/Z-Image-Turbo \
+TRANSFORMER_SUBFOLDER=transformer \
 RESOLUTION=384 \
 OUTPUT_DIR=/home/user/trt-work/onnx-384 \
 FORCE_EXPORT=1 \
@@ -159,7 +166,8 @@ done
 ```
 
 See [docs/TRT_STATUS.md](docs/TRT_STATUS.md) for the full validated build and
-performance notes.
+performance notes, and [docs/ARTIFACTS.md](docs/ARTIFACTS.md) for suggested
+ONNX/engine release layout.
 
 ## Architecture
 
@@ -205,7 +213,7 @@ Export machine:
 
 - Orin Nano / 8GB is not validated.
 - Engines are static-shape and resolution-specific.
-- Model weights, ONNX files, and TensorRT engines are not included.
+- Model weights, ONNX files, and TensorRT engines are not committed to normal git.
 - Runtime still uses PyTorch for the text encoder and VAE.
 - Docker launcher currently assumes Jetson-style host CUDA/TensorRT library mounts.
 

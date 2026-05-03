@@ -25,7 +25,8 @@ def _onnx_pad_sequence(sequences, batch_first=False, padding_value=0.0):
 torch.nn.utils.rnn.pad_sequence = _onnx_pad_sequence
 
 # -- Constants -------------------------------------------------------------
-MODEL_PATH = "/home/harve/models/huggingface/models--Tongyi-MAI--Z-Image-Turbo/snapshots/f332072aa78be7aecdf3ee76d5c247082da564a6/transformer"
+MODEL_PATH = os.environ.get("MODEL_PATH", "Tongyi-MAI/Z-Image-Turbo")
+TRANSFORMER_SUBFOLDER = os.environ.get("TRANSFORMER_SUBFOLDER", "transformer")
 RESOLUTION = int(os.environ.get("RESOLUTION", "512"))
 LATENT_H = RESOLUTION // 8
 LATENT_W = RESOLUTION // 8
@@ -45,6 +46,7 @@ os.makedirs(OUTPUT_DIR, exist_ok=True)
 FORCE_EXPORT = os.environ.get("FORCE_EXPORT", "0") == "1"
 
 print(f"Resolution: {RESOLUTION} latent={LATENT_H}x{LATENT_W} image_tokens={IMG_TOKENS}", flush=True)
+print(f"Model: {MODEL_PATH} subfolder={TRANSFORMER_SUBFOLDER or '<none>'}", flush=True)
 print("PyTorch: " + torch.__version__ + ", CUDA: " + str(torch.cuda.is_available()), flush=True)
 print("GPU: " + torch.cuda.get_device_name(0) + ", Memory free: " + str(torch.cuda.mem_get_info()[0]/1024**3) + " GB", flush=True)
 
@@ -54,9 +56,10 @@ import onnx
 
 # -- Load full model to CPU -------------------------------------------------
 print("\nLoading transformer to CPU...", flush=True)
-transformer = ZImageTransformer2DModel.from_pretrained(
-    MODEL_PATH, torch_dtype=torch.float32,
-).to("cpu")
+load_kwargs = {"torch_dtype": torch.float32}
+if TRANSFORMER_SUBFOLDER:
+    load_kwargs["subfolder"] = TRANSFORMER_SUBFOLDER
+transformer = ZImageTransformer2DModel.from_pretrained(MODEL_PATH, **load_kwargs).to("cpu")
 transformer.eval()
 print("Model loaded.", flush=True)
 
