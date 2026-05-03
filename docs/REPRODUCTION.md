@@ -68,6 +68,16 @@ python3 scripts/export/export_refiners.py
 
 Repeat with `RESOLUTION=512` and a separate `OUTPUT_DIR` if you need 512 mode.
 
+Optional: export VAE encoder/decoder ONNX to avoid loading PyTorch VAE during
+runtime:
+
+```bash
+MODEL_PATH=Tongyi-MAI/Z-Image-Turbo \
+RESOLUTION=384 \
+OUTPUT_DIR=/path/to/onnx-384 \
+python3 scripts/export/export_vae.py
+```
+
 ## 4. Build TensorRT engines on Jetson
 
 Copy ONNX files to the Jetson, then run:
@@ -78,8 +88,9 @@ ENGINE_DIR=/path/to/trt-engines-384-bf16 \
 scripts/export/build_trt_engines.sh
 ```
 
-The build script intentionally uses `--bf16`. FP16 is not the validated path for
-Z-Image-Turbo on this pipeline.
+The build script intentionally uses `--bf16`. FP16 is not the validated
+transformer path on this pipeline. VAE ONNX exports are named `*_fp16.onnx` but
+can live in the same directory and be built by the same script.
 
 ## 5. Run text-to-image
 
@@ -92,6 +103,15 @@ OUTPUT_DIR_HOST=/path/to/output \
 CUDA_HOST=/usr/local/cuda-12.6 \
 TRT_PY_HOST=/usr/lib/python3.10/dist-packages/tensorrt \
 NVIDIA_PIP_HOST=/path/to/python/site-packages/nvidia \
+RESOLUTION=384 \
+scripts/run/run_3drope_basic_refiner.sh
+```
+
+If VAE engines were built in the selected engine directory, enable the TRT VAE
+path:
+
+```bash
+USE_TRT_VAE=1 \
 RESOLUTION=384 \
 scripts/run/run_3drope_basic_refiner.sh
 ```

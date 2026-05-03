@@ -166,6 +166,25 @@ ENGINE_DIR=/home/user/models/axera-onnx/trt-engines-384-bf16 \
 scripts/export/build_trt_engines.sh
 ```
 
+Optional VAE TensorRT export:
+
+```bash
+MODEL_PATH=Tongyi-MAI/Z-Image-Turbo \
+RESOLUTION=384 \
+OUTPUT_DIR=/home/user/trt-work/onnx-384 \
+python3 scripts/export/export_vae.py
+
+ONNX_DIR=/home/user/trt-work/onnx-384 \
+ENGINE_DIR=/home/user/models/axera-onnx/trt-engines-384-bf16 \
+scripts/export/build_trt_engines.sh
+```
+
+Run with TRT VAE:
+
+```bash
+USE_TRT_VAE=1 RESOLUTION=384 scripts/run/run_3drope_basic_refiner.sh
+```
+
 See [docs/TRT_STATUS.md](docs/TRT_STATUS.md) for the full validated build and
 performance notes, and [docs/ARTIFACTS.md](docs/ARTIFACTS.md) for suggested
 ONNX/engine release layout.
@@ -175,12 +194,12 @@ For a newcomer-oriented checklist, see [docs/REPRODUCTION.md](docs/REPRODUCTION.
 ## Architecture
 
 ```text
-Text encoder (PyTorch Qwen3) -> TRT prompt preprocessor -> context refiners
+Text encoder (PyTorch Qwen3, pending TRT export) -> TRT prompt preprocessor -> context refiners
 Random or img2img latent -> TRT latent preprocessor -> noise refiners
 Concatenate image/text tokens
 30 x split TensorRT transformer layer engines
 TRT final projection -> FlowMatch scheduler step
-VAE decode (PyTorch)
+VAE decode (PyTorch fallback or TensorRT with USE_TRT_VAE=1)
 ```
 
 Why BF16:
@@ -232,7 +251,8 @@ Export machine:
 - Orin Nano / 8GB is not validated.
 - Engines are static-shape and resolution-specific.
 - Model weights, ONNX files, and TensorRT engines are not committed to normal git.
-- Runtime still uses PyTorch for the text encoder and VAE.
+- Runtime still uses PyTorch for the text encoder. The VAE can be moved to
+  TensorRT with `USE_TRT_VAE=1` after exporting/building VAE engines.
 - Docker launcher currently assumes Jetson-style host CUDA/TensorRT library mounts.
 
 ## License

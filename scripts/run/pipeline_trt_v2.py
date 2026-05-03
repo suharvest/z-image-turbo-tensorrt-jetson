@@ -12,11 +12,11 @@ Pipeline:
      b. TRT layer_0..29: x → x (30 layers)
      c. TRT final_projection: x → noise_pred [1,16,resolution/8,resolution/8]
      d. Scheduler step
-  8. VAE Decoder (PyTorch) → image
+  8. VAE Decoder (PyTorch or TensorRT) → image
 
 512 and 384 modes use separate static-shape engines; select with RESOLUTION.
 """
-import os, time, math, numpy as np
+import json, os, time, math, numpy as np
 import torch
 import tensorrt as trt
 
@@ -130,8 +130,12 @@ class TRTZImagePipelineV2:
 
     def __init__(self, engine_dir="/engines-v2", model_dir="/models/z-image-turbo-fp8-diffusers"):
         self.engine_dir = engine_dir
+        self.vae_engine_dir = os.environ.get("VAE_ENGINE_DIR", engine_dir)
         self.model_dir = model_dir
         self.device = "cuda"
+        self.use_trt_vae = os.environ.get("USE_TRT_VAE", "0") == "1"
+        self.vae_scale = None
+        self.vae_shift = None
         self.resolution = int(os.environ.get("RESOLUTION", "512"))
         self.latent_h = self.resolution // 8
         self.latent_w = self.resolution // 8
@@ -217,6 +221,17 @@ class TRTZImagePipelineV2:
         import gc; gc.collect()
         torch.cuda.empty_cache()
 
+    def _engine_path(self, base_name, engine_dir=None):
+        engine_dir = engine_dir or self.engine_dir
+        candidates = [
+            f"{engine_dir}/{base_name}_fp16.engine",
+            f"{engine_dir}/{base_name}.engine",
+        ]
+        for path in candidates:
+            if os.path.exists(path):
+                return path
+        return candidates[0]
+
     def _load_engines(self):
         """Load all TRT engines (call AFTER freeing text_encoder)."""
         pre = [
@@ -224,9 +239,7 @@ class TRTZImagePipelineV2:
             "noise_refiner_00", "noise_refiner_01",
         ]
         for name in pre:
-            path = f"{self.engine_dir}/{name}_fp16.engine"
-            if not os.path.exists(path):
-                path = f"{self.engine_dir}/{name}.engine"
+            path = self._engine_path(name)
             if os.path.exists(path):
                 if name in self.engines:
                     continue
@@ -261,6 +274,10 @@ class TRTZImagePipelineV2:
         for name in names:
             self.engines.pop(name, None)
 
+    def _release_text_encoder(self):
+        if hasattr(self, "text_encoder"):
+            del self.text_encoder
+
     def _calculate_shift(self):
         image_seq_len = self.image_tokens
         cfg = self.scheduler.config
@@ -290,6 +307,20 @@ class TRTZImagePipelineV2:
             ).to(self.device).eval()
             print(f"  VAE loaded in {time.time()-t0:.1f}s", flush=True)
 
+    def _load_vae_config(self):
+        if self.vae_scale is not None and self.vae_shift is not None:
+            return
+        config_path = os.path.join(self.model_dir, "vae", "config.json")
+        if os.path.exists(config_path):
+            with open(config_path, "r", encoding="utf-8") as f:
+                cfg = json.load(f)
+            self.vae_scale = float(cfg.get("scaling_factor", 1.0))
+            self.vae_shift = float(cfg.get("shift_factor", 0.0))
+            return
+        self._load_vae()
+        self.vae_scale = float(getattr(self.vae.config, "scaling_factor", 1.0))
+        self.vae_shift = float(getattr(self.vae.config, "shift_factor", 0.0))
+
     def _load_init_image(self, image_path):
         from PIL import Image
 
@@ -303,18 +334,33 @@ class TRTZImagePipelineV2:
         if not 0.0 <= strength <= 1.0:
             raise ValueError(f"STRENGTH must be in [0, 1], got {strength}")
         print(f"Encoding init image: {image_path} (strength={strength})", flush=True)
-        self._load_vae()
-        init_image = self._load_init_image(image_path).to(self.device, dtype=torch.bfloat16)
-        with torch.no_grad():
-            encoded = self.vae.encode(init_image)
-            if hasattr(encoded, "latent_dist"):
-                image_latent = encoded.latent_dist.sample(generator=generator)
-            elif hasattr(encoded, "latents"):
-                image_latent = encoded.latents
-            else:
-                image_latent = encoded[0]
-            image_latent = (image_latent - self.vae.config.shift_factor) * self.vae.config.scaling_factor
-            image_latent = image_latent.to(torch.float32)
+        self._load_vae_config()
+        if self.use_trt_vae:
+            path = self._engine_path("vae_encoder", self.vae_engine_dir)
+            if not os.path.exists(path):
+                raise FileNotFoundError(f"USE_TRT_VAE=1 but VAE encoder engine is missing: {path}")
+            init_image = self._load_init_image(image_path).to(self.device, dtype=torch.float16)
+            vae_encoder = TRTEngine(path)
+            encoded = vae_encoder(image=init_image)
+            mean = encoded["latent_mean"].to(torch.float32)
+            std = encoded["latent_std"].to(torch.float32)
+            eps = torch.randn(mean.shape, generator=generator, device=self.device, dtype=mean.dtype)
+            image_latent = mean + std * eps
+            image_latent = (image_latent - self.vae_shift) * self.vae_scale
+            del vae_encoder
+        else:
+            self._load_vae()
+            init_image = self._load_init_image(image_path).to(self.device, dtype=torch.bfloat16)
+            with torch.no_grad():
+                encoded = self.vae.encode(init_image)
+                if hasattr(encoded, "latent_dist"):
+                    image_latent = encoded.latent_dist.sample(generator=generator)
+                elif hasattr(encoded, "latents"):
+                    image_latent = encoded.latents
+                else:
+                    image_latent = encoded[0]
+                image_latent = (image_latent - self.vae_shift) * self.vae_scale
+                image_latent = image_latent.to(torch.float32)
 
         total_steps = len(self.scheduler.timesteps)
         init_timestep = min(total_steps, int(total_steps * strength))
@@ -328,6 +374,26 @@ class TRTZImagePipelineV2:
         noise = torch.randn(image_latent.shape, generator=generator, device=self.device, dtype=image_latent.dtype)
         latent = self.scheduler.scale_noise(image_latent, timestep, noise)
         return latent, timesteps
+
+    def _decode_latent(self, latent):
+        self._load_vae_config()
+        latent = (latent / self.vae_scale) + self.vae_shift
+        if self.use_trt_vae:
+            path = self._engine_path("vae_decoder", self.vae_engine_dir)
+            if not os.path.exists(path):
+                raise FileNotFoundError(f"USE_TRT_VAE=1 but VAE decoder engine is missing: {path}")
+            t0 = time.time()
+            vae_decoder = TRTEngine(path)
+            image = vae_decoder(latent=latent.to(torch.float16))["image"]
+            print(f"  TRT VAE decoded in {time.time()-t0:.1f}s", flush=True)
+            del vae_decoder
+            return image
+
+        if self.vae is None:
+            self._load_vae()
+        with torch.no_grad():
+            image = self.vae.decode(latent.to(torch.bfloat16)).sample
+        return image
 
     def encode_prompt(self, prompt):
         if hasattr(self.tokenizer, "apply_chat_template"):
@@ -417,6 +483,9 @@ class TRTZImagePipelineV2:
         self._release_engines(["prompt_preprocessor", "context_refiner_00", "context_refiner_01"])
         gc.collect(); torch.cuda.empty_cache()
 
+        self._release_text_encoder()
+        gc.collect(); torch.cuda.empty_cache()
+
         generator = torch.Generator(self.device).manual_seed(seed)
         self._set_timesteps(num_inference_steps)
         if init_image:
@@ -430,8 +499,8 @@ class TRTZImagePipelineV2:
                 self.scheduler.set_begin_index(0)
 
         # Phase 3: Free text encoder, load TRT engines
-        print("Freeing text encoder, loading TRT engines...", flush=True)
-        del self.text_encoder
+        print("Loading TRT engines...", flush=True)
+        self._release_text_encoder()
         if self.vae is not None and os.environ.get("DELAY_LOAD_VAE", "1") == "1":
             del self.vae
             self.vae = None
@@ -485,12 +554,7 @@ class TRTZImagePipelineV2:
             self.layer_output_buffers = None
             gc.collect()
             torch.cuda.empty_cache()
-        if self.vae is None:
-            self._load_vae()
-        with torch.no_grad():
-            latent = latent.to(torch.bfloat16)
-            latent = (latent / self.vae.config.scaling_factor) + self.vae.config.shift_factor
-            image = self.vae.decode(latent).sample
+        image = self._decode_latent(latent)
         image = (image / 2 + 0.5).clamp(0, 1)
         image = image.cpu().permute(0, 2, 3, 1).float().numpy()
         return image[0]
