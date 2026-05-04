@@ -189,6 +189,38 @@ Run with TRT VAE:
 USE_TRT_VAE=1 RESOLUTION=384 scripts/run/run_3drope_basic_refiner.sh
 ```
 
+Optional text encoder TensorRT export. The monolithic exporter is kept for
+experimentation, but the single 36-layer Qwen3 text encoder ONNX OOMs the
+TensorRT builder on Orin NX. Use the split exporter for Jetson:
+
+```bash
+MODEL_PATH=Tongyi-MAI/Z-Image-Turbo \
+OUTPUT_DIR=/home/user/trt-work/onnx-text-encoder-split-g4 \
+GROUP_SIZE=4 \
+python3 scripts/export/export_text_encoder_split.py
+
+for onnx in /home/user/trt-work/onnx-text-encoder-split-g4/*.onnx; do
+  base="$(basename "$onnx" .onnx)"
+  /usr/src/tensorrt/bin/trtexec \
+    --onnx="$onnx" \
+    --saveEngine="/home/user/models/axera-onnx/trt-text-encoder-split-g4/${base}.engine" \
+    --bf16 \
+    --builderOptimizationLevel=0 \
+    --memPoolSize=workspace:1024 \
+    --skipInference
+done
+```
+
+Run with TRT text encoder:
+
+```bash
+USE_TRT_TEXT_ENCODER=1 \
+TEXT_ENCODER_ENGINE_DIR=/models/axera-onnx/trt-text-encoder-split-g4 \
+TEXT_ENCODER_GROUPS=0-3,4-7,8-11,12-15,16-19,20-23,24-27,28-31,32-35 \
+RESOLUTION=384 \
+scripts/run/run_3drope_basic_refiner.sh
+```
+
 See [docs/TRT_STATUS.md](docs/TRT_STATUS.md) for the full validated build and
 performance notes, and [docs/ARTIFACTS.md](docs/ARTIFACTS.md) for suggested
 ONNX/engine release layout.
@@ -198,7 +230,7 @@ For a newcomer-oriented checklist, see [docs/REPRODUCTION.md](docs/REPRODUCTION.
 ## Architecture
 
 ```text
-Text encoder (PyTorch Qwen3, pending TRT export) -> TRT prompt preprocessor -> context refiners
+Text encoder (PyTorch fallback or TensorRT) -> TRT prompt preprocessor -> context refiners
 Random or img2img latent -> TRT latent preprocessor -> noise refiners
 Concatenate image/text tokens
 30 x split TensorRT transformer layer engines
@@ -255,8 +287,9 @@ Export machine:
 - Orin Nano / 8GB is not validated.
 - Engines are static-shape and resolution-specific.
 - Model weights, ONNX files, and TensorRT engines are not committed to normal git.
-- Runtime still uses PyTorch for the text encoder. The VAE can be moved to
-  TensorRT with `USE_TRT_VAE=1` after exporting/building VAE engines.
+- Runtime still uses PyTorch tensors/scheduler. The VAE and text encoder can be
+  moved to TensorRT with `USE_TRT_VAE=1` and `USE_TRT_TEXT_ENCODER=1`; on Jetson,
+  use the split text encoder engines rather than the monolithic text encoder.
 - Docker launcher currently assumes Jetson-style host CUDA/TensorRT library mounts.
 - If `USE_TRT_VAE=1` produces a black image, rebuild `vae_decoder_fp16.onnx`
   with BF16 and rerun with `DEBUG_TENSOR_STATS=1` to check for NaNs.

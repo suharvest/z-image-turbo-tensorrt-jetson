@@ -1,7 +1,7 @@
 """TRT-accelerated Z-Image-Turbo using BF16 TensorRT engines.
 
 Pipeline:
-  1. Text Encoder (PyTorch) → prompt_embeds [1,128,2560]
+  1. Text Encoder (PyTorch or TensorRT) → prompt_embeds [1,128,2560]
   2. TRT prompt_preprocessor → processed_prompt [1,128,3840]
   3. Random latent [1,16,resolution/8,resolution/8]
   4. TRT latent_preprocessor → image_tokens [1,(resolution/16)^2,3840]
@@ -135,9 +135,11 @@ class TRTZImagePipelineV2:
     def __init__(self, engine_dir="/engines-v2", model_dir="/models/z-image-turbo-fp8-diffusers"):
         self.engine_dir = engine_dir
         self.vae_engine_dir = os.environ.get("VAE_ENGINE_DIR", engine_dir)
+        self.text_encoder_engine_dir = os.environ.get("TEXT_ENCODER_ENGINE_DIR", engine_dir)
         self.model_dir = model_dir
         self.device = "cuda"
         self.use_trt_vae = os.environ.get("USE_TRT_VAE", "0") == "1"
+        self.use_trt_text_encoder = os.environ.get("USE_TRT_TEXT_ENCODER", "0") == "1"
         self.vae_scale = None
         self.vae_shift = None
         self.resolution = int(os.environ.get("RESOLUTION", "512"))
@@ -195,13 +197,16 @@ class TRTZImagePipelineV2:
     def _load_pytorch(self):
         if os.environ.get("MINIMAL_PYTORCH_LOAD", "1") == "1":
             from diffusers import FlowMatchEulerDiscreteScheduler
-            from transformers import Qwen3Model, Qwen2Tokenizer
+            from transformers import Qwen2Tokenizer
 
-            self.text_encoder = Qwen3Model.from_pretrained(
-                self.model_dir,
-                subfolder="text_encoder",
-                torch_dtype=torch.bfloat16,
-            ).to(self.device).eval()
+            if not self.use_trt_text_encoder:
+                from transformers import Qwen3Model
+
+                self.text_encoder = Qwen3Model.from_pretrained(
+                    self.model_dir,
+                    subfolder="text_encoder",
+                    torch_dtype=torch.bfloat16,
+                ).to(self.device).eval()
             self.tokenizer = Qwen2Tokenizer.from_pretrained(
                 self.model_dir,
                 subfolder="tokenizer",
@@ -228,6 +233,7 @@ class TRTZImagePipelineV2:
     def _engine_path(self, base_name, engine_dir=None):
         engine_dir = engine_dir or self.engine_dir
         candidates = [
+            f"{engine_dir}/{base_name}_bf16.engine",
             f"{engine_dir}/{base_name}_fp16.engine",
             f"{engine_dir}/{base_name}.engine",
         ]
@@ -235,6 +241,16 @@ class TRTZImagePipelineV2:
             if os.path.exists(path):
                 return path
         return candidates[0]
+
+    def _text_encoder_group_ranges(self):
+        groups = os.environ.get("TEXT_ENCODER_GROUPS", "").strip()
+        if not groups:
+            groups = "0-3,4-7,8-11,12-15,16-19,20-23,24-27,28-31,32-35"
+        ranges = []
+        for item in groups.split(","):
+            start, end = item.split("-")
+            ranges.append((int(start), int(end)))
+        return ranges
 
     def _load_engines(self):
         """Load all TRT engines (call AFTER freeing text_encoder)."""
@@ -438,6 +454,42 @@ class TRTZImagePipelineV2:
             prompt, padding="max_length", max_length=128,
             truncation=True, return_tensors="pt",
         )
+        if self.use_trt_text_encoder:
+            t0 = time.time()
+            single_path = self._engine_path("text_encoder", self.text_encoder_engine_dir)
+            input_ids = text_inputs.input_ids.to(self.device)
+            attention_mask = text_inputs.attention_mask.to(self.device)
+            if os.path.exists(single_path):
+                text_encoder = TRTEngine(single_path)
+                encoded = text_encoder(
+                    input_ids=input_ids,
+                    attention_mask=attention_mask,
+                )["prompt_embeds"].to(torch.float16)
+                del text_encoder
+            else:
+                hidden_states = None
+                for start, end in self._text_encoder_group_ranges():
+                    base = f"text_encoder_group_{start:02d}_{end:02d}"
+                    path = self._engine_path(base, self.text_encoder_engine_dir)
+                    if not os.path.exists(path):
+                        raise FileNotFoundError(
+                            f"USE_TRT_TEXT_ENCODER=1 but text encoder group engine is missing: {path}"
+                        )
+                    text_encoder = TRTEngine(path)
+                    kwargs = {
+                        "input_ids": input_ids,
+                        "attention_mask": attention_mask,
+                    }
+                    for input_name in text_encoder.inputs:
+                        if input_name.startswith("hidden_states"):
+                            kwargs[input_name] = hidden_states
+                    out = text_encoder(**kwargs)
+                    hidden_states = out["hidden_states"]
+                    del text_encoder
+                    torch.cuda.empty_cache()
+                encoded = hidden_states.to(torch.float16)
+            print(f"  TRT text encoder in {time.time()-t0:.1f}s", flush=True)
+            return encoded
         with torch.no_grad():
             output = self.text_encoder(
                 input_ids=text_inputs.input_ids.to(self.device),

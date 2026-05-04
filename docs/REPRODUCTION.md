@@ -78,6 +78,17 @@ OUTPUT_DIR=/path/to/onnx-384 \
 python3 scripts/export/export_vae.py
 ```
 
+Optional: export the Qwen3 text encoder ONNX to avoid loading the PyTorch text
+encoder during runtime. On Jetson, use the split exporter; the monolithic
+36-layer text encoder ONNX can parse but OOMs the TensorRT builder on Orin NX.
+
+```bash
+MODEL_PATH=Tongyi-MAI/Z-Image-Turbo \
+OUTPUT_DIR=/path/to/onnx-text-encoder-split-g4 \
+GROUP_SIZE=4 \
+python3 scripts/export/export_text_encoder_split.py
+```
+
 ## 4. Build TensorRT engines on Jetson
 
 Copy ONNX files to the Jetson, then run:
@@ -92,6 +103,21 @@ The build script intentionally uses `--bf16`. FP16 is not the validated path for
 the transformer or VAE decoder on this pipeline. VAE ONNX exports are named
 `*_fp16.onnx` because the exported tensors are FP16, but `vae_decoder_fp16.onnx`
 produced NaNs on Orin NX when built with `trtexec --fp16`.
+
+For split text encoder engines, build each group explicitly:
+
+```bash
+for onnx in /path/to/onnx-text-encoder-split-g4/*.onnx; do
+  base="$(basename "$onnx" .onnx)"
+  /usr/src/tensorrt/bin/trtexec \
+    --onnx="$onnx" \
+    --saveEngine="/path/to/trt-text-encoder-split-g4/${base}.engine" \
+    --bf16 \
+    --builderOptimizationLevel=0 \
+    --memPoolSize=workspace:1024 \
+    --skipInference
+done
+```
 
 ## 5. Run text-to-image
 
