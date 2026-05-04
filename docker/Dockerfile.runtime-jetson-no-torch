@@ -1,0 +1,22 @@
+ARG BASE_IMAGE=docker.m.daocloud.io/library/ubuntu:22.04
+FROM ${BASE_IMAGE}
+
+LABEL description="Z-Image-Turbo TensorRT runtime for Jetson without PyTorch"
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV PYTHONUNBUFFERED=1
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3 \
+    python3-pip \
+    libgomp1 \
+    libopenblas0-pthread \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN python3 -m pip install --no-cache-dir --upgrade pip && \
+    python3 -m pip install --no-cache-dir \
+      numpy \
+      pillow \
+      tokenizers
+
+WORKDIR /workspace

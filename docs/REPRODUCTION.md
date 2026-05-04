@@ -162,7 +162,24 @@ Expected validated reference on Orin NX 16GB:
 
 - 384, 4 steps: about 73 seconds total
 - 384, 4 steps with split TRT text encoder + TRT VAE: about 101 seconds total
+- 384, 4 steps with experimental no-PyTorch text-to-image runtime: about 126 seconds total
 - 512, 4 steps: about 100 seconds total
+
+Optional no-PyTorch text-to-image runtime:
+
+```bash
+docker build \
+  -f docker/Dockerfile.runtime-jetson-no-torch \
+  -t z-image-jetson-no-torch:latest .
+
+DOCKER_IMAGE=z-image-jetson-no-torch:latest \
+MODEL_ROOT_HOST=/path/to/models \
+ENGINE_DIR_384_HOST=/path/to/trt-engines-384-bf16 \
+TEXT_ENCODER_ENGINE_DIR_HOST=/path/to/trt-text-encoder-split-g4 \
+OUTPUT_DIR_HOST=/path/to/output \
+RESOLUTION=384 \
+scripts/run/run_3drope_no_torch.sh
+```
 
 ## 6. Run img2img
 

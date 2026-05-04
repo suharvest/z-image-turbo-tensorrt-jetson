@@ -259,6 +259,8 @@ Validated target:
 - TensorRT 10.3
 - CUDA 12.6 host libraries
 - Docker image with PyTorch, tokenizers, Pillow, and TensorRT Python bindings
+  for the faster Python runtime, or the no-PyTorch runtime image for the
+  experimental slim path
 
 The Docker image is only the runtime environment. It does not contain model
 weights, ONNX files, TensorRT engines, or generated outputs. `docker/Dockerfile.jetson`
@@ -278,6 +280,18 @@ docker build \
   -t z-image-jetson:latest .
 ```
 
+Experimental no-PyTorch runtime image:
+
+```bash
+docker build \
+  -f docker/Dockerfile.runtime-jetson-no-torch \
+  -t z-image-jetson-no-torch:latest .
+
+DOCKER_IMAGE=z-image-jetson-no-torch:latest \
+RESOLUTION=384 \
+scripts/run/run_3drope_no_torch.sh
+```
+
 Export machine:
 
 - CUDA GPU with enough memory for ONNX export
@@ -293,6 +307,11 @@ Export machine:
 - Runtime still uses PyTorch tensors as CUDA buffers. The default runtime
   scheduler is a built-in FlowMatch Euler implementation; set
   `USE_DIFFUSERS_SCHEDULER=1` only if you need to compare against diffusers.
+- `scripts/run/pipeline_trt_no_torch.py` is an experimental text-to-image
+  runtime that avoids importing PyTorch and uses TensorRT + CUDA Runtime via
+  `ctypes`. It is validated for 384 text-to-image but is slower than the
+  PyTorch-buffer runtime because it currently loads transformer layer engines
+  sequentially.
 - With `USE_TRT_TEXT_ENCODER=1`, the default tokenizer path uses `tokenizers`
   directly. Set `USE_TRANSFORMERS_TOKENIZER=1` only if you need to compare
   against transformers.
