@@ -299,6 +299,21 @@ class NoTorchPipeline:
         self.mask_full = np.ones((1, self.seq_len), dtype=np.bool_)
         self.mask_image = np.ones((1, self.image_tokens), dtype=np.bool_)
         self.mask_prompt = np.ones((1, self.text_tokens), dtype=np.bool_)
+        default_cache = 30 if self.resolution == 384 else 18
+        self.max_cached_layers = int(os.environ.get("MAX_CACHED_LAYERS", str(default_cache)))
+        self.loaded_layers = {}
+        self.layer_output_buffers = [
+            DeviceBuffer((1, self.seq_len, 3840), trt.DataType.HALF),
+            DeviceBuffer((1, self.seq_len, 3840), trt.DataType.HALF),
+        ]
+
+    def get_layer(self, idx):
+        if idx in self.loaded_layers:
+            return self.loaded_layers[idx]
+        while len(self.loaded_layers) >= self.max_cached_layers:
+            self.loaded_layers.pop(min(self.loaded_layers.keys()))
+        self.loaded_layers[idx] = TRTEngine(engine_path(self.engine_dir, f"layer_{idx:02d}"))
+        return self.loaded_layers[idx]
 
     def encode_prompt(self, prompt):
         text = self.tokenizer(prompt)
@@ -372,8 +387,8 @@ class NoTorchPipeline:
             CUDA.memcpy_d2d(dst_prompt, processed.ptr, prompt_nbytes)
 
             for layer_idx in range(30):
-                out = DeviceBuffer((1, self.seq_len, 3840), trt.DataType.HALF)
-                x = TRTEngine(engine_path(self.engine_dir, f"layer_{layer_idx:02d}")).run(
+                out = self.layer_output_buffers[layer_idx % 2]
+                x = self.get_layer(layer_idx).run(
                     outputs={"output": out},
                     x=x,
                     attn_mask=self.mask_full,

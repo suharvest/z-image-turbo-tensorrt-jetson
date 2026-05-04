@@ -309,9 +309,8 @@ Export machine:
   `USE_DIFFUSERS_SCHEDULER=1` only if you need to compare against diffusers.
 - `scripts/run/pipeline_trt_no_torch.py` is an experimental text-to-image
   runtime that avoids importing PyTorch and uses TensorRT + CUDA Runtime via
-  `ctypes`. It is validated for 384 text-to-image but is slower than the
-  PyTorch-buffer runtime because it currently loads transformer layer engines
-  sequentially.
+  `ctypes`. It is validated for 384 text-to-image on Orin NX 16GB; by default
+  it caches all 30 transformer layer engines in 384 mode.
 - With `USE_TRT_TEXT_ENCODER=1`, the default tokenizer path uses `tokenizers`
   directly. Set `USE_TRANSFORMERS_TOKENIZER=1` only if you need to compare
   against transformers.

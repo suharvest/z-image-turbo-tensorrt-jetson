@@ -162,7 +162,7 @@ Expected validated reference on Orin NX 16GB:
 
 - 384, 4 steps: about 73 seconds total
 - 384, 4 steps with split TRT text encoder + TRT VAE: about 101 seconds total
-- 384, 4 steps with experimental no-PyTorch text-to-image runtime: about 126 seconds total
+- 384, 4 steps with experimental no-PyTorch text-to-image runtime: about 93 seconds total
 - 512, 4 steps: about 100 seconds total
 
 Optional no-PyTorch text-to-image runtime:
