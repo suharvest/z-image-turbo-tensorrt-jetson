@@ -23,6 +23,183 @@ import tensorrt as trt
 TRT_LOGGER = trt.Logger(trt.Logger.WARNING)
 RUNTIME = trt.Runtime(TRT_LOGGER)
 
+
+class SchedulerStepOutput:
+    def __init__(self, prev_sample):
+        self.prev_sample = prev_sample
+
+
+class MinimalFlowMatchEulerScheduler:
+    """Small runtime-only subset of diffusers FlowMatchEulerDiscreteScheduler."""
+
+    order = 1
+
+    def __init__(self, config):
+        self.config = {
+            "num_train_timesteps": int(config.get("num_train_timesteps", 1000)),
+            "shift": float(config.get("shift", 1.0)),
+            "use_dynamic_shifting": bool(config.get("use_dynamic_shifting", False)),
+            "base_shift": float(config.get("base_shift", 0.5)),
+            "max_shift": float(config.get("max_shift", 1.15)),
+            "base_image_seq_len": int(config.get("base_image_seq_len", 256)),
+            "max_image_seq_len": int(config.get("max_image_seq_len", 4096)),
+            "invert_sigmas": bool(config.get("invert_sigmas", False)),
+            "shift_terminal": config.get("shift_terminal", None),
+            "time_shift_type": config.get("time_shift_type", "exponential"),
+            "stochastic_sampling": bool(config.get("stochastic_sampling", False)),
+        }
+        self._shift = self.config["shift"]
+        self._step_index = None
+        self._begin_index = None
+        self.num_inference_steps = None
+
+        num_train = self.config["num_train_timesteps"]
+        timesteps = np.linspace(1, num_train, num_train, dtype=np.float32)[::-1].copy()
+        sigmas = torch.from_numpy(timesteps).to(dtype=torch.float32) / num_train
+        if not self.config["use_dynamic_shifting"]:
+            sigmas = self.shift * sigmas / (1 + (self.shift - 1) * sigmas)
+        self.timesteps = sigmas * num_train
+        self.sigmas = sigmas.to("cpu")
+        self.sigma_min = self.sigmas[-1].item()
+        self.sigma_max = self.sigmas[0].item()
+
+    @classmethod
+    def from_model_dir(cls, model_dir):
+        config_path = os.path.join(model_dir, "scheduler", "scheduler_config.json")
+        if os.path.exists(config_path):
+            with open(config_path, "r", encoding="utf-8") as f:
+                return cls(json.load(f))
+        return cls({})
+
+    @property
+    def shift(self):
+        return self._shift
+
+    @property
+    def step_index(self):
+        return self._step_index
+
+    @property
+    def begin_index(self):
+        return self._begin_index
+
+    def set_begin_index(self, begin_index=0):
+        self._begin_index = begin_index
+
+    def _sigma_to_t(self, sigma):
+        return sigma * self.config["num_train_timesteps"]
+
+    def _time_shift_exponential(self, mu, sigma, t):
+        return math.exp(mu) / (math.exp(mu) + (1 / t - 1) ** sigma)
+
+    def _time_shift_linear(self, mu, sigma, t):
+        return mu / (mu + (1 / t - 1) ** sigma)
+
+    def time_shift(self, mu, sigma, t):
+        if self.config["time_shift_type"] == "linear":
+            return self._time_shift_linear(mu, sigma, t)
+        return self._time_shift_exponential(mu, sigma, t)
+
+    def stretch_shift_to_terminal(self, t):
+        one_minus_z = 1 - t
+        scale_factor = one_minus_z[-1] / (1 - self.config["shift_terminal"])
+        return 1 - (one_minus_z / scale_factor)
+
+    def set_timesteps(self, num_inference_steps=None, device=None, sigmas=None, mu=None, timesteps=None):
+        if self.config["use_dynamic_shifting"] and mu is None:
+            raise ValueError("mu must be passed when use_dynamic_shifting is true")
+        if num_inference_steps is None:
+            num_inference_steps = len(sigmas) if sigmas is not None else len(timesteps)
+        self.num_inference_steps = num_inference_steps
+
+        is_timesteps_provided = timesteps is not None
+        if is_timesteps_provided:
+            timesteps = np.array(timesteps).astype(np.float32)
+        if sigmas is None:
+            if timesteps is None:
+                timesteps = np.linspace(
+                    self._sigma_to_t(self.sigma_max),
+                    self._sigma_to_t(self.sigma_min),
+                    num_inference_steps,
+                )
+            sigmas = timesteps / self.config["num_train_timesteps"]
+        else:
+            sigmas = np.array(sigmas).astype(np.float32)
+
+        if self.config["use_dynamic_shifting"]:
+            sigmas = self.time_shift(mu, 1.0, sigmas)
+        else:
+            sigmas = self.shift * sigmas / (1 + (self.shift - 1) * sigmas)
+
+        if self.config["shift_terminal"]:
+            sigmas = self.stretch_shift_to_terminal(sigmas)
+
+        sigmas = torch.from_numpy(sigmas).to(dtype=torch.float32, device=device)
+        if not is_timesteps_provided:
+            timesteps = sigmas * self.config["num_train_timesteps"]
+        else:
+            timesteps = torch.from_numpy(timesteps).to(dtype=torch.float32, device=device)
+
+        if self.config["invert_sigmas"]:
+            sigmas = 1.0 - sigmas
+            timesteps = sigmas * self.config["num_train_timesteps"]
+            sigmas = torch.cat([sigmas, torch.ones(1, device=sigmas.device)])
+        else:
+            sigmas = torch.cat([sigmas, torch.zeros(1, device=sigmas.device)])
+
+        self.timesteps = timesteps
+        self.sigmas = sigmas
+        self._step_index = None
+        self._begin_index = None
+
+    def index_for_timestep(self, timestep, schedule_timesteps=None):
+        schedule_timesteps = self.timesteps if schedule_timesteps is None else schedule_timesteps
+        indices = (schedule_timesteps == timestep).nonzero()
+        pos = 1 if len(indices) > 1 else 0
+        return indices[pos].item()
+
+    def _init_step_index(self, timestep):
+        if self.begin_index is None:
+            if isinstance(timestep, torch.Tensor):
+                timestep = timestep.to(self.timesteps.device)
+            self._step_index = self.index_for_timestep(timestep)
+        else:
+            self._step_index = self._begin_index
+
+    def scale_noise(self, sample, timestep, noise=None):
+        sigmas = self.sigmas.to(device=sample.device, dtype=sample.dtype)
+        schedule_timesteps = self.timesteps.to(sample.device)
+        timestep = timestep.to(sample.device)
+        if self.begin_index is None:
+            step_indices = [self.index_for_timestep(t, schedule_timesteps) for t in timestep]
+        elif self.step_index is not None:
+            step_indices = [self.step_index] * timestep.shape[0]
+        else:
+            step_indices = [self.begin_index] * timestep.shape[0]
+        sigma = sigmas[step_indices].flatten()
+        while len(sigma.shape) < len(sample.shape):
+            sigma = sigma.unsqueeze(-1)
+        return sigma * noise + (1.0 - sigma) * sample
+
+    def step(self, model_output, timestep, sample, return_dict=True, **kwargs):
+        if self.step_index is None:
+            self._init_step_index(timestep)
+        sample = sample.to(torch.float32)
+        sigma = self.sigmas[self.step_index]
+        sigma_next = self.sigmas[self.step_index + 1]
+        if self.config["stochastic_sampling"]:
+            x0 = sample - sigma * model_output
+            noise = torch.randn_like(sample)
+            prev_sample = (1.0 - sigma_next) * x0 + sigma_next * noise
+        else:
+            prev_sample = sample + (sigma_next - sigma) * model_output
+        self._step_index += 1
+        prev_sample = prev_sample.to(model_output.dtype)
+        if not return_dict:
+            return (prev_sample,)
+        return SchedulerStepOutput(prev_sample)
+
+
 class TRTEngine:
     """Wrapper for a TRT engine with named I/O."""
     def __init__(self, engine_path):
@@ -151,7 +328,7 @@ class TRTZImagePipelineV2:
         self.text_tokens = int(os.environ.get("TEXT_TOKENS", "128"))
         self.seq_len = self.image_tokens + self.text_tokens
 
-        # Monkey-patches for diffusers on Jetson
+        # Compatibility patches for Jetson Python packages.
         import torch.distributed as dist
         if not hasattr(dist, "device_mesh"):
             dist.device_mesh = type("device_mesh", (), {"DeviceMesh": type("FakeDM", (), {})})
@@ -165,8 +342,7 @@ class TRTZImagePipelineV2:
         torch.backends.cuda.enable_mem_efficient_sdp(False)
         torch.backends.cuda.enable_math_sdp(True)
 
-        # Load PyTorch components first
-        print("Loading PyTorch components...", flush=True)
+        print("Loading Python runtime components...", flush=True)
         self._load_pytorch()
 
         self.engines = {}
@@ -196,7 +372,6 @@ class TRTZImagePipelineV2:
 
     def _load_pytorch(self):
         if os.environ.get("MINIMAL_PYTORCH_LOAD", "1") == "1":
-            from diffusers import FlowMatchEulerDiscreteScheduler
             from transformers import Qwen2Tokenizer
 
             if not self.use_trt_text_encoder:
@@ -211,10 +386,15 @@ class TRTZImagePipelineV2:
                 self.model_dir,
                 subfolder="tokenizer",
             )
-            self.scheduler = FlowMatchEulerDiscreteScheduler.from_pretrained(
-                self.model_dir,
-                subfolder="scheduler",
-            )
+            if os.environ.get("USE_DIFFUSERS_SCHEDULER", "0") == "1":
+                from diffusers import FlowMatchEulerDiscreteScheduler
+
+                self.scheduler = FlowMatchEulerDiscreteScheduler.from_pretrained(
+                    self.model_dir,
+                    subfolder="scheduler",
+                )
+            else:
+                self.scheduler = MinimalFlowMatchEulerScheduler.from_model_dir(self.model_dir)
             self.vae = None
         else:
             from diffusers import ZImagePipeline

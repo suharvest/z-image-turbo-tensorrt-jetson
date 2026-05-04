@@ -143,9 +143,21 @@ RESOLUTION=384 \
 scripts/run/run_3drope_basic_refiner.sh
 ```
 
+If split text encoder engines were built, enable the TRT text encoder path:
+
+```bash
+USE_TRT_TEXT_ENCODER=1 \
+TEXT_ENCODER_ENGINE_DIR=/models/axera-onnx/trt-text-encoder-split-g4 \
+TEXT_ENCODER_GROUPS=0-3,4-7,8-11,12-15,16-19,20-23,24-27,28-31,32-35 \
+USE_TRT_VAE=1 \
+RESOLUTION=384 \
+scripts/run/run_3drope_basic_refiner.sh
+```
+
 Expected validated reference on Orin NX 16GB:
 
 - 384, 4 steps: about 73 seconds total
+- 384, 4 steps with split TRT text encoder + TRT VAE: about 101 seconds total
 - 512, 4 steps: about 100 seconds total
 
 ## 6. Run img2img

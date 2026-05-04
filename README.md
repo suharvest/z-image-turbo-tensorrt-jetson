@@ -258,13 +258,15 @@ Validated target:
 - JetPack 6 / Ubuntu 22.04
 - TensorRT 10.3
 - CUDA 12.6 host libraries
-- Docker image with PyTorch, diffusers, transformers, Pillow, and TensorRT Python bindings
+- Docker image with PyTorch, transformers, Pillow, and TensorRT Python bindings
 
 The Docker image is only the runtime environment. It does not contain model
 weights, ONNX files, TensorRT engines, or generated outputs. `docker/Dockerfile.jetson`
 is provided as a starting template, but Jetson PyTorch wheels depend on your
 JetPack/CUDA version. If you already have a working Jetson PyTorch image, set
-`DOCKER_IMAGE` and use that instead.
+`DOCKER_IMAGE` and use that instead. `diffusers` is only needed for PyTorch
+fallback paths and export tools; the validated TRT text encoder + TRT VAE
+runtime uses the built-in FlowMatch scheduler.
 
 Example image build flow:
 
@@ -287,9 +289,12 @@ Export machine:
 - Orin Nano / 8GB is not validated.
 - Engines are static-shape and resolution-specific.
 - Model weights, ONNX files, and TensorRT engines are not committed to normal git.
-- Runtime still uses PyTorch tensors/scheduler. The VAE and text encoder can be
-  moved to TensorRT with `USE_TRT_VAE=1` and `USE_TRT_TEXT_ENCODER=1`; on Jetson,
-  use the split text encoder engines rather than the monolithic text encoder.
+- Runtime still uses PyTorch tensors as CUDA buffers. The default runtime
+  scheduler is a built-in FlowMatch Euler implementation; set
+  `USE_DIFFUSERS_SCHEDULER=1` only if you need to compare against diffusers.
+- The VAE and text encoder can be moved to TensorRT with `USE_TRT_VAE=1` and
+  `USE_TRT_TEXT_ENCODER=1`; on Jetson, use the split text encoder engines rather
+  than the monolithic text encoder.
 - Docker launcher currently assumes Jetson-style host CUDA/TensorRT library mounts.
 - If `USE_TRT_VAE=1` produces a black image, rebuild `vae_decoder_fp16.onnx`
   with BF16 and rerun with `DEBUG_TENSOR_STATS=1` to check for NaNs.
