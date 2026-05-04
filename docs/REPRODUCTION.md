@@ -154,6 +154,10 @@ RESOLUTION=384 \
 scripts/run/run_3drope_basic_refiner.sh
 ```
 
+This validated TRT runtime path uses the lightweight `tokenizers` loader and the
+built-in FlowMatch scheduler by default. Set `USE_TRANSFORMERS_TOKENIZER=1` or
+`USE_DIFFUSERS_SCHEDULER=1` only for parity comparisons.
+
 Expected validated reference on Orin NX 16GB:
 
 - 384, 4 steps: about 73 seconds total

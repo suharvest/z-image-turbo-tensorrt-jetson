@@ -19,6 +19,7 @@ Pipeline:
 import json, os, time, math, numpy as np
 import torch
 import tensorrt as trt
+from types import SimpleNamespace
 
 TRT_LOGGER = trt.Logger(trt.Logger.WARNING)
 RUNTIME = trt.Runtime(TRT_LOGGER)
@@ -200,6 +201,56 @@ class MinimalFlowMatchEulerScheduler:
         return SchedulerStepOutput(prev_sample)
 
 
+class LightweightQwenTokenizer:
+    """Runtime tokenizer path that avoids importing transformers."""
+
+    def __init__(self, model_dir, subfolder="tokenizer"):
+        from tokenizers import Tokenizer
+
+        tokenizer_dir = os.path.join(model_dir, subfolder)
+        self.tokenizer = Tokenizer.from_file(os.path.join(tokenizer_dir, "tokenizer.json"))
+        config_path = os.path.join(tokenizer_dir, "tokenizer_config.json")
+        with open(config_path, "r", encoding="utf-8") as f:
+            cfg = json.load(f)
+        self.pad_token = cfg.get("pad_token", "<|endoftext|>")
+        self.pad_token_id = self.tokenizer.token_to_id(self.pad_token)
+        if self.pad_token_id is None:
+            raise ValueError(f"Tokenizer pad token is missing from tokenizer.json: {self.pad_token}")
+
+    def apply_chat_template(self, messages, tokenize=False, add_generation_prompt=True, enable_thinking=True):
+        if tokenize:
+            raise ValueError("LightweightQwenTokenizer only supports tokenize=False")
+        parts = []
+        for message in messages:
+            role = message["role"] if isinstance(message, dict) else message.role
+            content = message["content"] if isinstance(message, dict) else message.content
+            parts.append(f"<|im_start|>{role}\n{content}<|im_end|>\n")
+        if add_generation_prompt:
+            parts.append("<|im_start|>assistant\n")
+            if enable_thinking is False:
+                parts.append("<think>\n\n</think>\n\n")
+        return "".join(parts)
+
+    def __call__(self, text, padding="max_length", max_length=128, truncation=True, return_tensors="pt"):
+        if padding != "max_length" or return_tensors != "pt":
+            raise ValueError("LightweightQwenTokenizer only supports padding=max_length and return_tensors=pt")
+        encoding = self.tokenizer.encode(text)
+        ids = encoding.ids
+        if truncation:
+            ids = ids[:max_length]
+        if len(ids) > max_length:
+            raise ValueError(f"Tokenized prompt length {len(ids)} exceeds max_length={max_length}")
+        attention = [1] * len(ids)
+        if padding == "max_length":
+            pad_len = max_length - len(ids)
+            ids = ids + [self.pad_token_id] * pad_len
+            attention = attention + [0] * pad_len
+        return SimpleNamespace(
+            input_ids=torch.tensor([ids], dtype=torch.long),
+            attention_mask=torch.tensor([attention], dtype=torch.long),
+        )
+
+
 class TRTEngine:
     """Wrapper for a TRT engine with named I/O."""
     def __init__(self, engine_path):
@@ -372,9 +423,8 @@ class TRTZImagePipelineV2:
 
     def _load_pytorch(self):
         if os.environ.get("MINIMAL_PYTORCH_LOAD", "1") == "1":
-            from transformers import Qwen2Tokenizer
-
             if not self.use_trt_text_encoder:
+                from transformers import Qwen2Tokenizer
                 from transformers import Qwen3Model
 
                 self.text_encoder = Qwen3Model.from_pretrained(
@@ -382,10 +432,19 @@ class TRTZImagePipelineV2:
                     subfolder="text_encoder",
                     torch_dtype=torch.bfloat16,
                 ).to(self.device).eval()
-            self.tokenizer = Qwen2Tokenizer.from_pretrained(
-                self.model_dir,
-                subfolder="tokenizer",
-            )
+                self.tokenizer = Qwen2Tokenizer.from_pretrained(
+                    self.model_dir,
+                    subfolder="tokenizer",
+                )
+            elif os.environ.get("USE_TRANSFORMERS_TOKENIZER", "0") == "1":
+                from transformers import Qwen2Tokenizer
+
+                self.tokenizer = Qwen2Tokenizer.from_pretrained(
+                    self.model_dir,
+                    subfolder="tokenizer",
+                )
+            else:
+                self.tokenizer = LightweightQwenTokenizer(self.model_dir)
             if os.environ.get("USE_DIFFUSERS_SCHEDULER", "0") == "1":
                 from diffusers import FlowMatchEulerDiscreteScheduler
 
