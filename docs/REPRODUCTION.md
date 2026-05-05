@@ -177,6 +177,7 @@ Expected validated reference on Orin NX 16GB:
 - 384, 4 steps: about 73 seconds total
 - 384, 4 steps with split TRT text encoder + TRT VAE: about 101 seconds total
 - 384, 4 steps with experimental no-PyTorch text-to-image runtime: about 93 seconds total
+- 384, 8 steps / strength 0.65 with no-PyTorch img2img runtime: about 120 seconds total
 - 512, 4 steps: about 100 seconds total
 
 Optional no-PyTorch text-to-image runtime:
@@ -197,6 +198,8 @@ If you need to modify the runtime image, build it locally with
 
 ## 6. Run img2img
 
+PyTorch-buffer runtime:
+
 ```bash
 DOCKER_IMAGE=z-image-jetson:latest \
 MODEL_ROOT_HOST=/path/to/models \
@@ -213,6 +216,27 @@ STRENGTH=0.65 \
 PROMPT="A cute orange tabby cat wearing a small red scarf, photorealistic" \
 scripts/run/run_3drope_basic_refiner.sh
 ```
+
+No-PyTorch runtime:
+
+```bash
+DOCKER_IMAGE=sensecraft-missionpack.seeed.cn/solution/z-image-jetson-no-torch:latest \
+MODEL_ROOT_HOST=/path/to/models \
+ENGINE_DIR_384_HOST=/path/to/trt-engines-384-bf16 \
+TEXT_ENCODER_ENGINE_DIR_HOST=/path/to/trt-text-encoder-split-g4 \
+OUTPUT_DIR_HOST=/path/to/output \
+INPUT_IMAGE_PATH=/path/to/reference.png \
+RESOLUTION=384 \
+NUM_STEPS=8 \
+STRENGTH=0.65 \
+MAX_CACHED_LAYERS=18 \
+PROMPT="A cute orange tabby cat wearing a small red scarf, photorealistic" \
+scripts/run/run_3drope_no_torch.sh
+```
+
+The no-PyTorch launcher prepares the init latent in a short first container,
+then starts a second container for denoising. This avoids keeping the VAE
+encoder TensorRT context resident while loading the DiT layer engines.
 
 ## 7. Report your result
 

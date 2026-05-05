@@ -8,7 +8,8 @@
 Accelerating Z-Image-Turbo (6B DiT, 30 transformer layers) on NVIDIA Jetson Orin NX (16GB RAM) via TensorRT 10.3.
 
 ## Latest Result
-As of 2026-05-04, the no-PyTorch runtime path generates a correct 384x384 cat image on orin-nx from a 413MB runtime image.
+As of 2026-05-05, the no-PyTorch runtime path supports both 384x384 text-to-image
+and 384x384 img2img on orin-nx from a 413MB runtime image.
 
 Validated no-PyTorch run on orin-nx:
 - Local image: `z-image-jetson-no-torch:latest`
@@ -26,7 +27,27 @@ Validated no-PyTorch run on orin-nx:
 - Output pulled to local: `/tmp/output_384_no_torch_layercache30.png`
 - Output md5: `88c8cf38c83e372d3d1fdb7d2b31a337`
 
+Validated no-PyTorch img2img run on orin-nx:
+- Reference image: `/home/harvest/z-image-input/ref_cat_384.png`
+- Prompt: `A cute orange tabby cat wearing a small red scarf, photorealistic`
+- Resolution: 384x384
+- Steps: 8
+- Strength: 0.65
+- Effective denoise steps: 5
+- `MAX_CACHED_LAYERS=18`
+- Total wall time: 119.9s
+- TRT denoise time: 84.4s
+- Per-step times: 30.1s, 13.9s, 13.6s, 13.3s, 13.5s
+- Output: `/home/harvest/z-image-output/output_384_no_torch_img2img_twostage_final.png`
+- Output md5 after pull: `cb4cd25777cffe5bfbd10cbe48b35403`
+
 The no-PyTorch path caches all 30 denoise layer engines in 384 mode on Orin NX 16GB. This became viable after removing PyTorch/diffusers/transformers runtime residency and reusing two TensorRT layer output buffers. Text encoder split engines are still loaded group-by-group; VAE decoder is loaded at decode time.
+
+For no-PyTorch img2img, the launcher uses two container invocations: first VAE
+encode writes `/output/init_latent_no_torch.npz`, then a fresh process loads
+that latent for denoising and VAE decode. Keeping the VAE encoder TensorRT
+context and the DiT layer engines in one process OOM-killed at step 1 on Orin
+NX, even with lower layer cache settings.
 
 As of 2026-05-03, the TensorRT BF16 path generates a correct, clean cat image on orin-nx. The remaining major quality bug was not a 30-layer accumulation issue; it was a refiner export/call mismatch:
 
@@ -49,6 +70,7 @@ Validated outputs on orin-nx:
 | no-PyTorch runtime | 413MB | sequential load | 114.0s | 74.1s | Correct |
 | no-PyTorch runtime | 413MB | 23 | 105.6s | 63.8s | Correct |
 | no-PyTorch runtime | 413MB | 30 | 92.8s | 56.2s | Correct |
+| no-PyTorch img2img | 413MB | 18 | 119.9s | 84.4s | Correct |
 
 The 30-layer cache is validated only for 384 mode on Orin NX 16GB. 512 mode remains defaulted to 18 cached layers until separately validated. 8GB Orin Nano should not assume this memory budget.
 
@@ -188,7 +210,7 @@ Conclusion: C++ invocation is not faster in this minimal benchmark, and Python b
 ## Current Problems
 
 No current image-quality blocker for the validated cat prompt at 512 or 384. Remaining constraints are feature coverage, performance, and memory:
-- no-PyTorch runtime is text-to-image only; img2img still uses the PyTorch-buffer runtime.
+- no-PyTorch img2img is validated for 384 only and uses a two-stage VAE encode + denoise launcher.
 - no-PyTorch 30-layer cache is validated for 384 on Orin NX 16GB only.
 - no-PyTorch text encoder still performs a BF16-to-FP16 CPU round trip between text encoder and prompt preprocessor.
 - 512 cache 19 OOMs during step 1; cache 18 is the validated default.
@@ -249,7 +271,7 @@ VAE Decoder(PyTorch fallback or TensorRT) → image [H,W,3]
 |------|----------|---------|
 | export_all_layers_fp32_adaln.py | wsl2:/home/harve/trt-work/ | ONNX export with all fixes |
 | pipeline_trt_v2.py | local:scripts/ | TRT pipeline (cached loading) |
-| pipeline_trt_no_torch.py | local:scripts/run/ | Experimental no-PyTorch TensorRT text-to-image runtime |
+| pipeline_trt_no_torch.py | local:scripts/run/ | Experimental no-PyTorch TensorRT text-to-image and img2img runtime |
 | Dockerfile.runtime-jetson-no-torch | local:docker/ | 413MB no-PyTorch runtime image recipe |
 | full_25.py | orin-nx:/tmp/ | No-cache TRT pipeline |
 | build_new_engines.sh | orin-nx:/tmp/ | Batch TRT engine build |
@@ -273,4 +295,4 @@ VAE Decoder(PyTorch fallback or TensorRT) → image [H,W,3]
    - VAE decode with scaling/shift
    - RoPE pose IDs `[F,H,W]` with caption/image offsets
 2. Treat split engines as the default path. The 5-layer group engine was slower after memory pressure reduced the cache budget.
-3. For no-PyTorch runtime speed, remove the remaining BF16→FP16 CPU round trip after text encoder, then validate 512 cache sizing. Treat img2img no-PyTorch support as a separate feature because it needs VAE encoder and image preprocessing without torch.
+3. For no-PyTorch runtime speed, remove the remaining BF16→FP16 CPU round trip after text encoder, then validate 512 cache sizing and tune img2img cache/latency.

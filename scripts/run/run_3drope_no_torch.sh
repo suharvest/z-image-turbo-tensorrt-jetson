@@ -37,24 +37,52 @@ done
 
 mkdir -p "$OUTPUT_DIR_HOST"
 
-docker run --rm --privileged --network=host \
-  -v /usr/lib/aarch64-linux-gnu:/host-libs:ro \
-  -v /etc/alternatives:/etc/alternatives:ro \
-  -v "$CUDA_HOST:/usr/local/cuda:ro" \
-  -v "$TRT_PY_HOST:/usr/local/trt-py:ro" \
-  -v "$MODEL_ROOT_HOST:/models:ro" \
-  -v "$ENGINE_DIR_HOST:$ENGINE_DIR:ro" \
-  -v "$TEXT_ENCODER_ENGINE_DIR_HOST:/text-encoder-engines:ro" \
-  -v "$OUTPUT_DIR_HOST:/output" \
-  -v "$PIPELINE_PATH:/workspace/pipeline_trt_no_torch.py:ro" \
-  -e RESOLUTION="$RESOLUTION" \
-  -e MODEL_DIR="$MODEL_DIR" \
-  -e ENGINE_DIR="$ENGINE_DIR" \
-  -e TEXT_ENCODER_ENGINE_DIR="/text-encoder-engines" \
-  -e VAE_ENGINE_DIR="$ENGINE_DIR" \
-  -e OUTPUT_PATH="$OUTPUT_PATH" \
-  -e NUM_STEPS="${NUM_STEPS:-4}" \
-  -e PROMPT="${PROMPT:-A cute orange tabby cat sitting on a sunny windowsill, soft natural lighting, photorealistic, high detail}" \
-  -e PYTHONPATH=/usr/local/trt-py \
-  -e LD_LIBRARY_PATH="/usr/local/cuda/lib64:/usr/local/cuda/targets/aarch64-linux/lib:/usr/local/cuda/nvvm/lib64:/host-libs:/host-libs/tegra:/host-libs/openblas-pthread" \
-  "$DOCKER_IMAGE" python3 -u /workspace/pipeline_trt_no_torch.py
+EXTRA_MOUNTS=()
+INIT_LATENT_PATH="${INIT_LATENT_PATH:-}"
+if [ -n "${INPUT_IMAGE_PATH:-}" ]; then
+  if [ ! -f "$INPUT_IMAGE_PATH" ]; then
+    echo "Input image not found: $INPUT_IMAGE_PATH" >&2
+    exit 1
+  fi
+  EXTRA_MOUNTS+=("-v" "$INPUT_IMAGE_PATH:/input/init_image:ro")
+  INIT_IMAGE="/input/init_image"
+  INIT_LATENT_PATH="${INIT_LATENT_PATH:-/output/init_latent_no_torch.npz}"
+fi
+
+run_container() {
+  local encode_only="$1"
+  docker run --rm --privileged --network=host \
+    -v /usr/lib/aarch64-linux-gnu:/host-libs:ro \
+    -v /etc/alternatives:/etc/alternatives:ro \
+    -v "$CUDA_HOST:/usr/local/cuda:ro" \
+    -v "$TRT_PY_HOST:/usr/local/trt-py:ro" \
+    -v "$MODEL_ROOT_HOST:/models:ro" \
+    -v "$ENGINE_DIR_HOST:$ENGINE_DIR:ro" \
+    -v "$TEXT_ENCODER_ENGINE_DIR_HOST:/text-encoder-engines:ro" \
+    -v "$OUTPUT_DIR_HOST:/output" \
+    -v "$PIPELINE_PATH:/workspace/pipeline_trt_no_torch.py:ro" \
+    "${EXTRA_MOUNTS[@]}" \
+    -e RESOLUTION="$RESOLUTION" \
+    -e MODEL_DIR="$MODEL_DIR" \
+    -e ENGINE_DIR="$ENGINE_DIR" \
+    -e TEXT_ENCODER_ENGINE_DIR="/text-encoder-engines" \
+    -e VAE_ENGINE_DIR="$ENGINE_DIR" \
+    -e OUTPUT_PATH="$OUTPUT_PATH" \
+    -e NUM_STEPS="${NUM_STEPS:-4}" \
+    -e MAX_CACHED_LAYERS="${MAX_CACHED_LAYERS:-}" \
+    -e INIT_IMAGE="${INIT_IMAGE:-}" \
+    -e INIT_LATENT_PATH="$INIT_LATENT_PATH" \
+    -e IMG2IMG_ENCODE_ONLY="$encode_only" \
+    -e STRENGTH="${STRENGTH:-0.6}" \
+    -e PROMPT="${PROMPT:-A cute orange tabby cat sitting on a sunny windowsill, soft natural lighting, photorealistic, high detail}" \
+    -e PYTHONPATH=/usr/local/trt-py \
+    -e LD_LIBRARY_PATH="/usr/local/cuda/lib64:/usr/local/cuda/targets/aarch64-linux/lib:/usr/local/cuda/nvvm/lib64:/host-libs:/host-libs/tegra:/host-libs/openblas-pthread" \
+    "$DOCKER_IMAGE" python3 -u /workspace/pipeline_trt_no_torch.py
+}
+
+if [ -n "${INPUT_IMAGE_PATH:-}" ]; then
+  echo "Preparing no-torch img2img latent..."
+  run_container 1
+fi
+
+run_container 0

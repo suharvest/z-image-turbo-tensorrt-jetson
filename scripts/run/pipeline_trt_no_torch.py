@@ -5,6 +5,7 @@ This is an experimental runtime-only path for 384/512 TRT engines. It uses
 TensorRT Python bindings, CUDA Runtime via ctypes, NumPy, tokenizers, and PIL.
 """
 import ctypes
+import gc
 import json
 import math
 import os
@@ -116,6 +117,12 @@ class DeviceBuffer:
             CUDA.free(self.ptr)
             self.ptr = None
 
+    def __del__(self):
+        try:
+            self.free()
+        except Exception:
+            pass
+
 
 class TRTEngine:
     def __init__(self, path):
@@ -137,6 +144,16 @@ class TRTEngine:
                 self.inputs.append(name)
             else:
                 self.outputs[name] = shape
+
+    def close(self):
+        self.context = None
+        self.engine = None
+
+    def __del__(self):
+        try:
+            self.close()
+        except Exception:
+            pass
 
     def run(self, outputs=None, **inputs):
         outputs = outputs or {}
@@ -219,6 +236,16 @@ class MinimalFlowMatchEulerScheduler:
         self.timesteps = sigmas * self.num_train_timesteps
         self.sigmas = np.concatenate([sigmas.astype(np.float32), np.zeros(1, dtype=np.float32)])
         self._step_index = 0
+        self._begin_index = 0
+
+    def set_begin_index(self, begin_index):
+        self._begin_index = int(begin_index)
+        self._step_index = int(begin_index)
+
+    def scale_noise(self, sample, timestep, noise):
+        del timestep  # The caller has already selected the scheduler begin index.
+        sigma = np.float32(self.sigmas[self._begin_index])
+        return sigma * noise + (np.float32(1.0) - sigma) * sample
 
     def step(self, model_output, sample):
         sigma = self.sigmas[self._step_index]
@@ -267,6 +294,14 @@ def device_to_host(buf):
     return CUDA.memcpy_d2h(arr, buf.ptr)
 
 
+def load_init_image(image_path, resolution):
+    image = Image.open(image_path).convert("RGB")
+    image = image.resize((resolution, resolution), Image.Resampling.LANCZOS)
+    arr = np.asarray(image, dtype=np.float32) / 255.0
+    arr = np.transpose(arr, (2, 0, 1))[None]
+    return (arr * 2.0 - 1.0).astype(np.float16)
+
+
 def engine_path(engine_dir, base):
     for suffix in ("_bf16.engine", "_fp16.engine", ".engine"):
         path = os.path.join(engine_dir, base + suffix)
@@ -300,7 +335,8 @@ class NoTorchPipeline:
         self.mask_image = np.ones((1, self.image_tokens), dtype=np.bool_)
         self.mask_prompt = np.ones((1, self.text_tokens), dtype=np.bool_)
         default_cache = 30 if self.resolution == 384 else 18
-        self.max_cached_layers = int(os.environ.get("MAX_CACHED_LAYERS", str(default_cache)))
+        cache_env = os.environ.get("MAX_CACHED_LAYERS")
+        self.max_cached_layers = int(cache_env) if cache_env else default_cache
         self.loaded_layers = {}
         self.layer_output_buffers = [
             DeviceBuffer((1, self.seq_len, 3840), trt.DataType.HALF),
@@ -311,7 +347,9 @@ class NoTorchPipeline:
         if idx in self.loaded_layers:
             return self.loaded_layers[idx]
         while len(self.loaded_layers) >= self.max_cached_layers:
-            self.loaded_layers.pop(min(self.loaded_layers.keys()))
+            old_idx = min(self.loaded_layers.keys())
+            self.loaded_layers.pop(old_idx).close()
+            gc.collect()
         self.loaded_layers[idx] = TRTEngine(engine_path(self.engine_dir, f"layer_{idx:02d}"))
         return self.loaded_layers[idx]
 
@@ -329,12 +367,75 @@ class NoTorchPipeline:
                 if name.startswith("hidden_states"):
                     kwargs[name] = hidden
             hidden = eng.run(outputs={"hidden_states": out_buf}, **kwargs)["hidden_states"]
+            eng.close()
+            del eng
+            gc.collect()
         prompt_fp16 = bf16_device_to_fp16_device(hidden)
         ping.free()
         pong.free()
         return prompt_fp16
 
-    def run(self, prompt, steps=4, seed=42):
+    def prepare_img2img_latent(self, image_path, strength, rng):
+        if not 0.0 <= strength <= 1.0:
+            raise ValueError(f"STRENGTH must be in [0, 1], got {strength}")
+        if not os.path.exists(image_path):
+            raise FileNotFoundError(f"Init image not found: {image_path}")
+        print(f"Encoding init image: {image_path} (strength={strength})", flush=True)
+        init_image = load_init_image(image_path, self.resolution)
+        vae_encoder = TRTEngine(engine_path(self.vae_dir, "vae_encoder"))
+        encoded = vae_encoder.run(image=init_image)
+        mean = device_to_host(encoded["latent_mean"]).astype(np.float32)
+        std = device_to_host(encoded["latent_std"]).astype(np.float32)
+        for buf in encoded.values():
+            buf.free()
+        vae_encoder.close()
+        del vae_encoder
+        gc.collect()
+        eps = rng.standard_normal(mean.shape, dtype=np.float32)
+        image_latent = mean + std * eps
+        with open(os.path.join(self.model_dir, "vae", "config.json"), "r", encoding="utf-8") as f:
+            vae_cfg = json.load(f)
+        image_latent = (
+            (image_latent - float(vae_cfg.get("shift_factor", 0.0)))
+            * float(vae_cfg.get("scaling_factor", 1.0))
+        ).astype(np.float32)
+
+        total_steps = len(self.scheduler.timesteps)
+        init_timestep = min(total_steps, int(total_steps * strength))
+        t_start = max(total_steps - init_timestep, 0)
+        timesteps = self.scheduler.timesteps[t_start:]
+        if len(timesteps) < 1:
+            raise ValueError(f"STRENGTH={strength} leaves no denoising steps")
+        self.scheduler.set_begin_index(t_start)
+        noise = rng.standard_normal(image_latent.shape, dtype=np.float32)
+        latent = self.scheduler.scale_noise(image_latent, timesteps[:1], noise).astype(np.float32)
+        return latent, timesteps, t_start
+
+    def save_img2img_latent(self, image_path, strength, steps, seed, output_path):
+        self.scheduler.set_timesteps(steps)
+        rng = np.random.default_rng(seed)
+        latent, timesteps, t_start = self.prepare_img2img_latent(image_path, strength, rng)
+        os.makedirs(os.path.dirname(output_path), exist_ok=True)
+        np.savez(
+            output_path,
+            latent=latent,
+            t_start=np.asarray(t_start, dtype=np.int32),
+            steps=np.asarray(steps, dtype=np.int32),
+            timesteps=np.asarray(timesteps, dtype=np.float32),
+        )
+        print(f"INIT LATENT SAVED: {output_path}", flush=True)
+
+    def load_img2img_latent(self, path, steps):
+        data = np.load(path)
+        latent = np.asarray(data["latent"], dtype=np.float32)
+        saved_steps = int(np.asarray(data["steps"]).item())
+        if saved_steps != steps:
+            raise ValueError(f"INIT_LATENT_PATH was prepared with NUM_STEPS={saved_steps}, got {steps}")
+        t_start = int(np.asarray(data["t_start"]).item())
+        self.scheduler.set_begin_index(t_start)
+        return latent, self.scheduler.timesteps[t_start:]
+
+    def run(self, prompt, steps=4, seed=42, init_image=None, strength=0.6):
         t0 = time.time()
         print(f"Encoding: '{prompt[:60]}...'", flush=True)
         prompt_embeds = self.encode_prompt(prompt)
@@ -343,30 +444,46 @@ class NoTorchPipeline:
         prompt_pre = TRTEngine(engine_path(self.engine_dir, "prompt_preprocessor"))
         processed = prompt_pre.run(prompt_embeds=prompt_embeds)["processed_prompt"]
         prompt_embeds.free()
+        prompt_pre.close()
+        del prompt_pre
         for name in ("context_refiner_00", "context_refiner_01"):
             path = os.path.join(self.engine_dir, f"{name}.engine")
             if os.path.exists(path):
                 out = DeviceBuffer((1, self.text_tokens, 3840), trt.DataType.HALF)
-                processed = TRTEngine(path).run(
+                refiner = TRTEngine(path)
+                processed = refiner.run(
                     outputs={"output": out},
                     x=processed,
                     attn_mask=self.mask_prompt,
                     freqs_cis=self.freqs_prompt,
                 )["output"]
+                refiner.close()
+                del refiner
 
-        rng = np.random.default_rng(seed)
-        latent = rng.standard_normal((1, 16, self.latent_h, self.latent_w), dtype=np.float32)
         self.scheduler.set_timesteps(steps)
+        rng = np.random.default_rng(seed)
+        init_latent_path = os.environ.get("INIT_LATENT_PATH") or None
+        if init_latent_path:
+            print(f"Loading init latent: {init_latent_path}", flush=True)
+            latent, timesteps = self.load_img2img_latent(init_latent_path, steps)
+        elif init_image:
+            latent, timesteps, _ = self.prepare_img2img_latent(init_image, strength, rng)
+        else:
+            latent = rng.standard_normal((1, 16, self.latent_h, self.latent_w), dtype=np.float32)
+            timesteps = self.scheduler.timesteps
+            self.scheduler.set_begin_index(0)
+        active_steps = len(timesteps)
 
         latent_pre = TRTEngine(engine_path(self.engine_dir, "latent_preprocessor"))
         t_embed = TRTEngine(engine_path(self.engine_dir, "t_embedder"))
         final_proj = TRTEngine(engine_path(self.engine_dir, "final_projection"))
         noise_refiners = [TRTEngine(os.path.join(self.engine_dir, f"noise_refiner_{i:02d}.engine")) for i in range(2)]
+        gc.collect()
 
         total_trt = 0.0
-        for step_idx, timestep in enumerate(self.scheduler.timesteps):
+        for step_idx, timestep in enumerate(timesteps):
             st = time.time()
-            print(f"  Step {step_idx + 1}/{steps} (t={timestep:.0f})...", end=" ", flush=True)
+            print(f"  Step {step_idx + 1}/{active_steps} (t={timestep:.0f})...", end=" ", flush=True)
             adaln = t_embed.run(timestep=np.asarray([1000.0 - float(timestep)], dtype=np.float32))["adaln_input"]
             image_tokens = latent_pre.run(latent=latent.astype(np.float32))["image_tokens"]
             for refiner in noise_refiners:
@@ -419,9 +536,17 @@ def main():
         "A cute orange tabby cat sitting on a sunny windowsill, soft natural lighting, photorealistic, high detail",
     )
     steps = int(os.environ.get("NUM_STEPS", "4"))
+    init_image = os.environ.get("INIT_IMAGE") or None
+    strength = float(os.environ.get("STRENGTH", "0.6"))
     pipe = NoTorchPipeline()
+    if os.environ.get("IMG2IMG_ENCODE_ONLY", "0") == "1":
+        if not init_image:
+            raise ValueError("IMG2IMG_ENCODE_ONLY=1 requires INIT_IMAGE")
+        init_latent_path = os.environ.get("INIT_LATENT_PATH", "/output/init_latent_no_torch.npz")
+        pipe.save_img2img_latent(init_image, strength, steps, seed=42, output_path=init_latent_path)
+        return
     t0 = time.time()
-    image = pipe.run(prompt, steps=steps, seed=42)
+    image = pipe.run(prompt, steps=steps, seed=42, init_image=init_image, strength=strength)
     output_path = os.environ.get("OUTPUT_PATH", "/output/output_no_torch.png")
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
     Image.fromarray((image * 255).astype(np.uint8)).save(output_path)

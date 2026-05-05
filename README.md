@@ -46,6 +46,7 @@ Measured on Jetson Orin NX 16GB, JetPack 6, TensorRT 10.3, BF16 engines.
 | 512 text-to-image | 4 | 100.2s | 63.1s | Best speed/quality balance |
 | 512 text-to-image | 8 | 159.7s | 123.0s | Highest validated 512 run |
 | 384 img2img | 8, strength 0.65 | 83.9s | 46.0s | 5 effective denoise steps |
+| 384 no-PyTorch img2img | 8, strength 0.65 | 119.9s | 84.4s | Two-stage VAE encode + denoise |
 
 Cache limits on Orin NX 16GB:
 
@@ -102,6 +103,8 @@ Set `MODEL_DIR` if your model folder has a different name.
 
 ## Img2Img
 
+PyTorch-buffer runtime:
+
 ```bash
 RESOLUTION=384 \
 NUM_STEPS=8 \
@@ -111,6 +114,24 @@ OUTPUT_PATH=/output/output_img2img.png \
 PROMPT="A cute orange tabby cat wearing a small red scarf, photorealistic" \
 scripts/run/run_3drope_basic_refiner.sh
 ```
+
+No-PyTorch runtime:
+
+```bash
+DOCKER_IMAGE=sensecraft-missionpack.seeed.cn/solution/z-image-jetson-no-torch:latest \
+RESOLUTION=384 \
+NUM_STEPS=8 \
+STRENGTH=0.65 \
+MAX_CACHED_LAYERS=18 \
+INPUT_IMAGE_PATH=/path/to/reference.png \
+OUTPUT_PATH=/output/output_img2img_no_torch.png \
+PROMPT="A cute orange tabby cat wearing a small red scarf, photorealistic" \
+scripts/run/run_3drope_no_torch.sh
+```
+
+The no-PyTorch img2img launcher runs VAE encode and denoise in two separate
+container invocations. That keeps the VAE encoder TensorRT context from staying
+resident while the 30 DiT layer engines are loaded.
 
 `STRENGTH` controls how much the reference image changes:
 
