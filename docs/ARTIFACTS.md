@@ -1,12 +1,19 @@
 # Artifacts
 
-This project has three artifact classes:
+This project has several artifact classes. The public Hugging Face artifact
+repo created for this project is:
+
+```text
+https://huggingface.co/harvestsu/z-image-turbo-jetson-trt-artifacts
+```
 
 | Artifact | Typical size | Should it be in git? | Recommended distribution |
 |---|---:|---|---|
-| Model weights | ~30GB+ | No | Upstream Hugging Face model |
-| ONNX exports | ~12GB per resolution | No | Hugging Face dataset/model repo or GitHub Release with Git LFS |
-| TensorRT engines | ~12-13GB per resolution | No | Per-device release assets, because engines are TensorRT/GPU/JetPack dependent |
+| Model weights | ~20GB | No | Upstream Hugging Face model |
+| ONNX exports | ~12GB per resolution | No | Optional Hugging Face artifact repo |
+| TensorRT engines | ~12GB per resolution | No | Hugging Face artifact repo, separated by Jetson/TRT target |
+| Split text encoder engines | ~15GB | No | Hugging Face artifact repo, separated by Jetson/TRT target |
+| Minimal runtime configs | Small | No | Hugging Face artifact repo |
 
 ## Why ONNX is not committed directly
 
@@ -60,26 +67,58 @@ If you already have a local model snapshot, point `MODEL_PATH` at the repo root
 and keep `TRANSFORMER_SUBFOLDER=transformer`. If `MODEL_PATH` points directly at
 the transformer folder, set `TRANSFORMER_SUBFOLDER=`.
 
-## Recommended public artifact layout
+## Public artifact layout
 
-Use a separate Hugging Face repository such as:
+Use the separate Hugging Face model repository:
 
 ```text
-<org>/z-image-turbo-jetson-trt-artifacts
-  onnx-384/
-  onnx-512/
-  engines/orin-nx-jp6-trt10.3/384-bf16/
-  engines/orin-nx-jp6-trt10.3/512-bf16/
+harvestsu/z-image-turbo-jetson-trt-artifacts
+  runtime-minimal/
+    tokenizer/
+    scheduler/
+    vae/config.json
+  engines/
+    orin-nx-jp6-trt10.3/
+      384-bf16/
+      512-bf16/
+      text-encoder-split-g4/
   manifests/
-    onnx-384.sha256
-    onnx-512.sha256
-    engines-384.sha256
-    engines-512.sha256
+    engines-orin-nx-jp6-trt10.3-384-bf16.sha256
+    engines-orin-nx-jp6-trt10.3-512-bf16.sha256
+    text-encoder-split-g4-orin-nx-jp6-trt10.3.sha256
+    runtime-minimal.sha256
 ```
 
 Keep TensorRT engines separated by hardware/software target. Engines are not a
 portable model format; they are tied to TensorRT version, GPU architecture, and
 often JetPack/CUDA details.
+
+The checked-in template under `artifacts/hf/` is the initial Hugging Face repo
+card and manifest directory. Upload it with:
+
+```bash
+hf upload harvestsu/z-image-turbo-jetson-trt-artifacts artifacts/hf . \
+  --repo-type model \
+  --commit-message "Add artifact repository card"
+```
+
+Generate a SHA256 manifest before uploading a large folder:
+
+```bash
+scripts/artifacts/make_sha256_manifest.sh \
+  /path/to/trt-engines-384-bf16 \
+  artifacts/hf/manifests/engines-orin-nx-jp6-trt10.3-384-bf16.sha256
+```
+
+Then upload the folder to its target path:
+
+```bash
+hf upload harvestsu/z-image-turbo-jetson-trt-artifacts \
+  /path/to/trt-engines-384-bf16 \
+  engines/orin-nx-jp6-trt10.3/384-bf16 \
+  --repo-type model \
+  --commit-message "Add Orin NX 384 BF16 engines"
+```
 
 ## If you still want ONNX in this git repo
 

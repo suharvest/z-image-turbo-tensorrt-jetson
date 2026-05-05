@@ -59,7 +59,8 @@ Cache limits on Orin NX 16GB:
 This repo does not commit model weights, ONNX files, or TensorRT engines to
 normal git because each resolution is roughly 12GB of generated artifacts. You
 can reproduce them from the public upstream model, or publish/download them from
-a separate Hugging Face/Git LFS artifact repo. See
+the Hugging Face artifact repo at
+`harvestsu/z-image-turbo-jetson-trt-artifacts`. See
 [docs/ARTIFACTS.md](docs/ARTIFACTS.md).
 
 For a host that already has the model and engines in the expected locations:
