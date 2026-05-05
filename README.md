@@ -260,8 +260,8 @@ Validated target:
 - TensorRT 10.3
 - CUDA 12.6 host libraries
 - Docker image with PyTorch, tokenizers, Pillow, and TensorRT Python bindings
-  for the faster Python runtime, or the no-PyTorch runtime image for the
-  experimental slim path
+  for the faster Python runtime, or the published no-PyTorch runtime image for
+  the slim path
 
 The Docker image is only the runtime environment. It does not contain model
 weights, ONNX files, TensorRT engines, or generated outputs. `docker/Dockerfile.jetson`
@@ -281,16 +281,28 @@ docker build \
   -t z-image-jetson:latest .
 ```
 
-Experimental no-PyTorch runtime image:
+Published no-PyTorch runtime image:
+
+```bash
+docker pull sensecraft-missionpack.seeed.cn/solution/z-image-jetson-no-torch:latest
+
+DOCKER_IMAGE=sensecraft-missionpack.seeed.cn/solution/z-image-jetson-no-torch:latest \
+RESOLUTION=384 \
+scripts/run/run_3drope_no_torch.sh
+```
+
+The pushed image digest is:
+
+```text
+sha256:b32bababb80932c8cacc7a3c4afa426664e912affa1bbd1e6205112af95386a7
+```
+
+Build the no-PyTorch runtime locally if you need to modify the image:
 
 ```bash
 docker build \
   -f docker/Dockerfile.runtime-jetson-no-torch \
   -t z-image-jetson-no-torch:latest .
-
-DOCKER_IMAGE=z-image-jetson-no-torch:latest \
-RESOLUTION=384 \
-scripts/run/run_3drope_no_torch.sh
 ```
 
 Export machine:

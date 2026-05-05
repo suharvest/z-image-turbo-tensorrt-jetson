@@ -31,6 +31,20 @@ docker group according to your system policy.
 The runtime image only contains dependencies. It does not contain model weights
 or engines.
 
+For the validated no-PyTorch 384 text-to-image path, pull the published
+MissionPack image:
+
+```bash
+docker pull sensecraft-missionpack.seeed.cn/solution/z-image-jetson-no-torch:latest
+export DOCKER_IMAGE=sensecraft-missionpack.seeed.cn/solution/z-image-jetson-no-torch:latest
+```
+
+Published digest:
+
+```text
+sha256:b32bababb80932c8cacc7a3c4afa426664e912affa1bbd1e6205112af95386a7
+```
+
 Either use an existing Jetson PyTorch image:
 
 ```bash
@@ -168,11 +182,7 @@ Expected validated reference on Orin NX 16GB:
 Optional no-PyTorch text-to-image runtime:
 
 ```bash
-docker build \
-  -f docker/Dockerfile.runtime-jetson-no-torch \
-  -t z-image-jetson-no-torch:latest .
-
-DOCKER_IMAGE=z-image-jetson-no-torch:latest \
+DOCKER_IMAGE=sensecraft-missionpack.seeed.cn/solution/z-image-jetson-no-torch:latest \
 MODEL_ROOT_HOST=/path/to/models \
 ENGINE_DIR_384_HOST=/path/to/trt-engines-384-bf16 \
 TEXT_ENCODER_ENGINE_DIR_HOST=/path/to/trt-text-encoder-split-g4 \
@@ -180,6 +190,10 @@ OUTPUT_DIR_HOST=/path/to/output \
 RESOLUTION=384 \
 scripts/run/run_3drope_no_torch.sh
 ```
+
+If you need to modify the runtime image, build it locally with
+`docker/Dockerfile.runtime-jetson-no-torch` and set
+`DOCKER_IMAGE=z-image-jetson-no-torch:latest`.
 
 ## 6. Run img2img
 

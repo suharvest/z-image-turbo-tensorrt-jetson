@@ -11,7 +11,9 @@ Accelerating Z-Image-Turbo (6B DiT, 30 transformer layers) on NVIDIA Jetson Orin
 As of 2026-05-04, the no-PyTorch runtime path generates a correct 384x384 cat image on orin-nx from a 413MB runtime image.
 
 Validated no-PyTorch run on orin-nx:
-- Image: `z-image-jetson-no-torch:latest`
+- Local image: `z-image-jetson-no-torch:latest`
+- Published image: `sensecraft-missionpack.seeed.cn/solution/z-image-jetson-no-torch:latest`
+- Published digest: `sha256:b32bababb80932c8cacc7a3c4afa426664e912affa1bbd1e6205112af95386a7`
 - Image size: 413MB
 - Runtime imports: TensorRT Python, CUDA Runtime through `ctypes`, NumPy, Pillow, tokenizers
 - Runtime does not import: PyTorch, diffusers, transformers
