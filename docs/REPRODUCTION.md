@@ -42,7 +42,7 @@ export DOCKER_IMAGE=sensecraft-missionpack.seeed.cn/solution/z-image-jetson-no-t
 Published digest:
 
 ```text
-sha256:a4c1733edd84e3e87d4fe08fa72514d91628f763874c5f2f15b35cfeae20da1a
+sha256:e328d15da5110288dc0341ffa929e983fbd861c6c7ea82c6c185f5d3025542a1
 ```
 
 Either use an existing Jetson PyTorch image:
