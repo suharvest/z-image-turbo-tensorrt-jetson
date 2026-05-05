@@ -35,19 +35,19 @@ Validated no-PyTorch img2img run on orin-nx:
 - Strength: 0.65
 - Effective denoise steps: 5
 - `MAX_CACHED_LAYERS=18`
-- Total wall time: 119.9s
-- TRT denoise time: 84.4s
-- Per-step times: 30.1s, 13.9s, 13.6s, 13.3s, 13.5s
-- Output: `/home/harvest/z-image-output/output_384_no_torch_img2img_twostage_final.png`
+- Total wall time: 123.1s
+- TRT denoise time: 86.9s
+- Per-step times: 30.8s, 14.2s, 13.6s, 13.8s, 14.4s
+- Output: `/home/harvest/z-image-output/output_384_no_torch_img2img_single_stage_cache18.png`
 - Output md5 after pull: `cb4cd25777cffe5bfbd10cbe48b35403`
 
 The no-PyTorch path caches all 30 denoise layer engines in 384 mode on Orin NX 16GB. This became viable after removing PyTorch/diffusers/transformers runtime residency and reusing two TensorRT layer output buffers. Text encoder split engines are still loaded group-by-group; VAE decoder is loaded at decode time.
 
-For no-PyTorch img2img, the launcher uses two container invocations: first VAE
-encode writes `/output/init_latent_no_torch.npz`, then a fresh process loads
-that latent for denoising and VAE decode. Keeping the VAE encoder TensorRT
-context and the DiT layer engines in one process OOM-killed at step 1 on Orin
-NX, even with lower layer cache settings.
+For no-PyTorch img2img, the default launcher keeps VAE encode and denoise in one
+container. A two-process fallback remains available with `IMG2IMG_TWO_STAGE=1`;
+it first writes `/output/init_latent_no_torch.npz`, then starts a fresh process
+for denoising and VAE decode. Earlier OOM tests were misleading because
+`MAX_CACHED_LAYERS` was not being forwarded into the Docker container.
 
 As of 2026-05-03, the TensorRT BF16 path generates a correct, clean cat image on orin-nx. The remaining major quality bug was not a 30-layer accumulation issue; it was a refiner export/call mismatch:
 
@@ -70,7 +70,7 @@ Validated outputs on orin-nx:
 | no-PyTorch runtime | 413MB | sequential load | 114.0s | 74.1s | Correct |
 | no-PyTorch runtime | 413MB | 23 | 105.6s | 63.8s | Correct |
 | no-PyTorch runtime | 413MB | 30 | 92.8s | 56.2s | Correct |
-| no-PyTorch img2img | 413MB | 18 | 119.9s | 84.4s | Correct |
+| no-PyTorch img2img | 413MB | 18 | 123.1s | 86.9s | Correct |
 
 The 30-layer cache is validated only for 384 mode on Orin NX 16GB. 512 mode remains defaulted to 18 cached layers until separately validated. 8GB Orin Nano should not assume this memory budget.
 
@@ -210,7 +210,7 @@ Conclusion: C++ invocation is not faster in this minimal benchmark, and Python b
 ## Current Problems
 
 No current image-quality blocker for the validated cat prompt at 512 or 384. Remaining constraints are feature coverage, performance, and memory:
-- no-PyTorch img2img is validated for 384 only and uses a two-stage VAE encode + denoise launcher.
+- no-PyTorch img2img is validated for 384 only; `IMG2IMG_TWO_STAGE=1` is available as a low-memory fallback.
 - no-PyTorch 30-layer cache is validated for 384 on Orin NX 16GB only.
 - no-PyTorch text encoder still performs a BF16-to-FP16 CPU round trip between text encoder and prompt preprocessor.
 - 512 cache 19 OOMs during step 1; cache 18 is the validated default.

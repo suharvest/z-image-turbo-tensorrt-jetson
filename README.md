@@ -46,7 +46,7 @@ Measured on Jetson Orin NX 16GB, JetPack 6, TensorRT 10.3, BF16 engines.
 | 512 text-to-image | 4 | 100.2s | 63.1s | Best speed/quality balance |
 | 512 text-to-image | 8 | 159.7s | 123.0s | Highest validated 512 run |
 | 384 img2img | 8, strength 0.65 | 83.9s | 46.0s | 5 effective denoise steps |
-| 384 no-PyTorch img2img | 8, strength 0.65 | 119.9s | 84.4s | Two-stage VAE encode + denoise |
+| 384 no-PyTorch img2img | 8, strength 0.65 | 123.1s | 86.9s | Single-stage VAE encode + denoise |
 
 Cache limits on Orin NX 16GB:
 
@@ -129,9 +129,9 @@ PROMPT="A cute orange tabby cat wearing a small red scarf, photorealistic" \
 scripts/run/run_3drope_no_torch.sh
 ```
 
-The no-PyTorch img2img launcher runs VAE encode and denoise in two separate
-container invocations. That keeps the VAE encoder TensorRT context from staying
-resident while the 30 DiT layer engines are loaded.
+The no-PyTorch img2img path runs VAE encode and denoise in one container by
+default. Set `IMG2IMG_TWO_STAGE=1` to force a two-process fallback that writes
+the init latent to `/output/init_latent_no_torch.npz` before denoising.
 
 `STRENGTH` controls how much the reference image changes:
 

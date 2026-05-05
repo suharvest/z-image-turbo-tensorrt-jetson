@@ -177,7 +177,7 @@ Expected validated reference on Orin NX 16GB:
 - 384, 4 steps: about 73 seconds total
 - 384, 4 steps with split TRT text encoder + TRT VAE: about 101 seconds total
 - 384, 4 steps with experimental no-PyTorch text-to-image runtime: about 93 seconds total
-- 384, 8 steps / strength 0.65 with no-PyTorch img2img runtime: about 120 seconds total
+- 384, 8 steps / strength 0.65 with no-PyTorch img2img runtime: about 123 seconds total
 - 512, 4 steps: about 100 seconds total
 
 Optional no-PyTorch text-to-image runtime:
@@ -234,9 +234,10 @@ PROMPT="A cute orange tabby cat wearing a small red scarf, photorealistic" \
 scripts/run/run_3drope_no_torch.sh
 ```
 
-The no-PyTorch launcher prepares the init latent in a short first container,
-then starts a second container for denoising. This avoids keeping the VAE
-encoder TensorRT context resident while loading the DiT layer engines.
+The no-PyTorch img2img path runs VAE encode and denoise in one container by
+default. If you hit OOM on a tighter target, set `IMG2IMG_TWO_STAGE=1` to force
+a two-process fallback that writes `/output/init_latent_no_torch.npz` before
+denoising.
 
 ## 7. Report your result
 

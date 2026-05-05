@@ -80,9 +80,10 @@ run_container() {
     "$DOCKER_IMAGE" python3 -u /workspace/pipeline_trt_no_torch.py
 }
 
-if [ -n "${INPUT_IMAGE_PATH:-}" ]; then
+if [ -n "${INPUT_IMAGE_PATH:-}" ] && [ "${IMG2IMG_TWO_STAGE:-0}" = "1" ]; then
   echo "Preparing no-torch img2img latent..."
   run_container 1
+  INIT_IMAGE=""
 fi
 
 run_container 0
