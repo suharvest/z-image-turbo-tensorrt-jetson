@@ -20,3 +20,5 @@ RUN python3 -m pip install --no-cache-dir --upgrade pip && \
       tokenizers
 
 WORKDIR /workspace
+
+COPY scripts/run/pipeline_trt_no_torch.py /workspace/pipeline_trt_no_torch.py

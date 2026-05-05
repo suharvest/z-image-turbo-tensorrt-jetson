@@ -3,6 +3,13 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PIPELINE_PATH="${PIPELINE_PATH:-$SCRIPT_DIR/pipeline_trt_no_torch.py}"
+PIPELINE_MOUNT=()
+if [ -f "$PIPELINE_PATH" ]; then
+  PIPELINE_MOUNT=("-v" "$PIPELINE_PATH:/workspace/pipeline_trt_no_torch.py:ro")
+elif [ -n "${PIPELINE_PATH:-}" ] && [ "$PIPELINE_PATH" != "$SCRIPT_DIR/pipeline_trt_no_torch.py" ]; then
+  echo "Pipeline path not found: $PIPELINE_PATH" >&2
+  exit 1
+fi
 
 MODEL_ROOT_HOST="${MODEL_ROOT_HOST:-$HOME/models}"
 ENGINE_DIR_512_HOST="${ENGINE_DIR_512_HOST:-$HOME/models/axera-onnx/trt-engines-bf16}"
@@ -28,7 +35,7 @@ else
   exit 1
 fi
 
-for required_path in "$PIPELINE_PATH" "$MODEL_ROOT_HOST" "$ENGINE_DIR_HOST" "$TEXT_ENCODER_ENGINE_DIR_HOST" "$CUDA_HOST" "$TRT_PY_HOST"; do
+for required_path in "$MODEL_ROOT_HOST" "$ENGINE_DIR_HOST" "$TEXT_ENCODER_ENGINE_DIR_HOST" "$CUDA_HOST" "$TRT_PY_HOST"; do
   if [ ! -e "$required_path" ]; then
     echo "Required path not found: $required_path" >&2
     exit 1
@@ -60,7 +67,7 @@ run_container() {
     -v "$ENGINE_DIR_HOST:$ENGINE_DIR:ro" \
     -v "$TEXT_ENCODER_ENGINE_DIR_HOST:/text-encoder-engines:ro" \
     -v "$OUTPUT_DIR_HOST:/output" \
-    -v "$PIPELINE_PATH:/workspace/pipeline_trt_no_torch.py:ro" \
+    "${PIPELINE_MOUNT[@]}" \
     "${EXTRA_MOUNTS[@]}" \
     -e RESOLUTION="$RESOLUTION" \
     -e MODEL_DIR="$MODEL_DIR" \
