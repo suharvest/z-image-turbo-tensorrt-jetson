@@ -45,6 +45,8 @@ Measured on Jetson Orin NX 16GB, JetPack 6, TensorRT 10.3, BF16 engines.
 | 384 text-to-image | 8 | 107.8s | 71.7s | Highest validated 384 quality |
 | 512 text-to-image | 4 | 100.2s | 63.1s | Best speed/quality balance |
 | 512 text-to-image | 8 | 159.7s | 123.0s | Highest validated 512 run |
+| 512 no-PyTorch text-to-image | 4 | 117.4s | 80.1s | TRT VAE + TRT text encoder |
+| 512 no-PyTorch img2img | 8, strength 0.65 | 129.7s | 91.6s | 5 effective denoise steps |
 | 384 img2img | 8, strength 0.65 | 83.9s | 46.0s | 5 effective denoise steps |
 | 384 no-PyTorch img2img | 8, strength 0.65 | 123.1s | 86.9s | Single-stage VAE encode + denoise |
 
@@ -132,6 +134,8 @@ scripts/run/run_3drope_no_torch.sh
 The no-PyTorch img2img path runs VAE encode and denoise in one container by
 default. Set `IMG2IMG_TWO_STAGE=1` to force a two-process fallback that writes
 the init latent to `/output/init_latent_no_torch.npz` before denoising.
+Set `RESOLUTION=512` and point `ENGINE_DIR_512_HOST` at the 512 engine folder
+to run the validated 512 path.
 
 `STRENGTH` controls how much the reference image changes:
 

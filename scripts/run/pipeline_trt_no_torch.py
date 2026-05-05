@@ -278,7 +278,7 @@ def precompute_freqs_cis_3d(img_h, img_w, text_len=128, theta=256.0):
     return np.concatenate(parts, axis=-1)[None].astype(np.float16)
 
 
-def bf16_device_to_fp16_device(buf):
+def bf16_device_to_fp16_device_cpu(buf):
     host = np.empty(buf.shape, dtype=np.uint16)
     CUDA.memcpy_d2h(host, buf.ptr)
     fp32 = (host.astype(np.uint32) << 16).view(np.float32)
@@ -286,6 +286,18 @@ def bf16_device_to_fp16_device(buf):
     out = DeviceBuffer(fp16.shape, trt.DataType.HALF)
     CUDA.memcpy_h2d(out.ptr, fp16)
     return out
+
+
+def bf16_device_to_fp16_device(buf, engine_dir=None):
+    if engine_dir:
+        try:
+            cast_engine = TRTEngine(engine_path(engine_dir, "bf16_to_fp16_1x128x2560"))
+            out = cast_engine.run(input=buf)["output"]
+            cast_engine.close()
+            return out
+        except FileNotFoundError:
+            pass
+    return bf16_device_to_fp16_device_cpu(buf)
 
 
 def device_to_host(buf):
@@ -370,7 +382,7 @@ class NoTorchPipeline:
             eng.close()
             del eng
             gc.collect()
-        prompt_fp16 = bf16_device_to_fp16_device(hidden)
+        prompt_fp16 = bf16_device_to_fp16_device(hidden, self.text_dir)
         ping.free()
         pong.free()
         return prompt_fp16

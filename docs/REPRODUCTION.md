@@ -179,6 +179,8 @@ Expected validated reference on Orin NX 16GB:
 - 384, 4 steps with experimental no-PyTorch text-to-image runtime: about 93 seconds total
 - 384, 8 steps / strength 0.65 with no-PyTorch img2img runtime: about 123 seconds total
 - 512, 4 steps: about 100 seconds total
+- 512, 4 steps with no-PyTorch text-to-image runtime: about 117 seconds total
+- 512, 8 steps / strength 0.65 with no-PyTorch img2img runtime: about 130 seconds total
 
 Optional no-PyTorch text-to-image runtime:
 
@@ -238,6 +240,10 @@ The no-PyTorch img2img path runs VAE encode and denoise in one container by
 default. If you hit OOM on a tighter target, set `IMG2IMG_TWO_STAGE=1` to force
 a two-process fallback that writes `/output/init_latent_no_torch.npz` before
 denoising.
+
+For 512 img2img, set `RESOLUTION=512` and provide `ENGINE_DIR_512_HOST` with
+the 512 TensorRT engines, including `vae_encoder_fp16.engine` and
+`vae_decoder_fp16.engine`.
 
 ## 7. Report your result
 

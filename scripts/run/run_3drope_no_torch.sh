@@ -53,7 +53,9 @@ if [ -n "${INPUT_IMAGE_PATH:-}" ]; then
   fi
   EXTRA_MOUNTS+=("-v" "$INPUT_IMAGE_PATH:/input/init_image:ro")
   INIT_IMAGE="/input/init_image"
-  INIT_LATENT_PATH="${INIT_LATENT_PATH:-/output/init_latent_no_torch.npz}"
+  if [ "${IMG2IMG_TWO_STAGE:-0}" = "1" ]; then
+    INIT_LATENT_PATH="${INIT_LATENT_PATH:-/output/init_latent_no_torch.npz}"
+  fi
 fi
 
 run_container() {

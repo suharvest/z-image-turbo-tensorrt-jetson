@@ -89,6 +89,11 @@ harvestsu/z-image-turbo-jetson-trt-artifacts
     runtime-minimal.sha256
 ```
 
+The `text-encoder-split-g4/` folder also contains the tiny
+`bf16_to_fp16_1x128x2560.engine` cast engine used by the no-PyTorch runtime to
+connect BF16 text encoder output to the FP16 prompt preprocessor without a CPU
+round trip.
+
 Keep TensorRT engines separated by hardware/software target. Engines are not a
 portable model format; they are tied to TensorRT version, GPU architecture, and
 often JetPack/CUDA details.
