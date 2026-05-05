@@ -14,7 +14,7 @@ and 384x384 img2img on orin-nx from a 413MB runtime image.
 Validated no-PyTorch run on orin-nx:
 - Local image: `z-image-jetson-no-torch:latest`
 - Published image: `sensecraft-missionpack.seeed.cn/solution/z-image-jetson-no-torch:latest`
-- Published digest: `sha256:b32bababb80932c8cacc7a3c4afa426664e912affa1bbd1e6205112af95386a7`
+- Published digest: `sha256:a4c1733edd84e3e87d4fe08fa72514d91628f763874c5f2f15b35cfeae20da1a`
 - Image size: 413MB
 - Runtime imports: TensorRT Python, CUDA Runtime through `ctypes`, NumPy, Pillow, tokenizers
 - Runtime does not import: PyTorch, diffusers, transformers
