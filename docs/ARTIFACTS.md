@@ -115,15 +115,22 @@ scripts/artifacts/make_sha256_manifest.sh \
   artifacts/hf/manifests/engines-orin-nx-jp6-trt10.3-384-bf16.sha256
 ```
 
-Then upload the folder to its target path:
+Then upload the folder with the large-folder uploader. Run it from the artifact
+repo root and use `--include` to preserve the target path:
 
 ```bash
-hf upload harvestsu/z-image-turbo-jetson-trt-artifacts \
-  /path/to/trt-engines-384-bf16 \
-  engines/orin-nx-jp6-trt10.3/384-bf16 \
+hf upload-large-folder harvestsu/z-image-turbo-jetson-trt-artifacts \
+  /path/to/z-image-trt-artifacts \
   --repo-type model \
-  --commit-message "Add Orin NX 384 BF16 engines"
+  --include "engines/orin-nx-jp6-trt10.3/384-bf16/**" \
+  --exclude ".DS_Store" \
+  --num-workers 4
 ```
+
+Use the same pattern for `512-bf16/**` and `text-encoder-split-g4/**`.
+`hf upload-large-folder` is preferred over `hf upload` for these engine folders
+because it keeps resumable metadata under `.cache/huggingface/` and handles
+large multi-GB folders more reliably.
 
 ## If you still want ONNX in this git repo
 

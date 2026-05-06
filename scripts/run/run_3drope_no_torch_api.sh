@@ -19,9 +19,9 @@ elif [ -n "${PIPELINE_PATH:-}" ] && [ "$PIPELINE_PATH" != "$SCRIPT_DIR/pipeline_
 fi
 
 MODEL_ROOT_HOST="${MODEL_ROOT_HOST:-$HOME/models}"
-ENGINE_DIR_512_HOST="${ENGINE_DIR_512_HOST:-$HOME/models/axera-onnx/trt-engines-bf16}"
-ENGINE_DIR_384_HOST="${ENGINE_DIR_384_HOST:-$HOME/models/axera-onnx/trt-engines-384-bf16}"
-TEXT_ENCODER_ENGINE_DIR_HOST="${TEXT_ENCODER_ENGINE_DIR_HOST:-$HOME/models/axera-onnx/trt-text-encoder-split-g4}"
+ENGINE_DIR_512_HOST="${ENGINE_DIR_512_HOST:-$HOME/models/z-image-trt-artifacts/engines/orin-nx-jp6-trt10.3/512-bf16}"
+ENGINE_DIR_384_HOST="${ENGINE_DIR_384_HOST:-$HOME/models/z-image-trt-artifacts/engines/orin-nx-jp6-trt10.3/384-bf16}"
+TEXT_ENCODER_ENGINE_DIR_HOST="${TEXT_ENCODER_ENGINE_DIR_HOST:-$HOME/models/z-image-trt-artifacts/engines/orin-nx-jp6-trt10.3/text-encoder-split-g4}"
 OUTPUT_DIR_HOST="${OUTPUT_DIR_HOST:-$HOME/z-image-output}"
 UPLOAD_DIR_HOST="${UPLOAD_DIR_HOST:-$HOME/z-image-input/api-uploads}"
 DOCKER_IMAGE="${DOCKER_IMAGE:-z-image-jetson-no-torch:latest}"

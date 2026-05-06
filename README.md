@@ -66,6 +66,25 @@ the Hugging Face artifact repo at
 `harvestsu/z-image-turbo-jetson-trt-artifacts`. See
 [docs/ARTIFACTS.md](docs/ARTIFACTS.md).
 
+Download the published runtime artifacts on the Jetson host:
+
+```bash
+hf download harvestsu/z-image-turbo-jetson-trt-artifacts \
+  --local-dir "$HOME/models/z-image-trt-artifacts"
+```
+
+The recommended host layout is:
+
+```text
+$HOME/models/
+  z-image-turbo-fp8-diffusers/
+  z-image-trt-artifacts/
+    engines/orin-nx-jp6-trt10.3/
+      384-bf16/
+      512-bf16/
+      text-encoder-split-g4/
+```
+
 For a host that already has the model and engines in the expected locations:
 
 ```bash
@@ -89,8 +108,9 @@ Override host paths if your layout differs:
 DOCKER_IMAGE=z-image-jetson:latest \
 MODEL_ROOT_HOST=/path/to/models \
 MODEL_DIR=/models/z-image-turbo-fp8-diffusers \
-ENGINE_DIR_384_HOST=/path/to/trt-engines-384-bf16 \
-ENGINE_DIR_512_HOST=/path/to/trt-engines-bf16 \
+ENGINE_DIR_384_HOST=/path/to/z-image-trt-artifacts/engines/orin-nx-jp6-trt10.3/384-bf16 \
+ENGINE_DIR_512_HOST=/path/to/z-image-trt-artifacts/engines/orin-nx-jp6-trt10.3/512-bf16 \
+TEXT_ENCODER_ENGINE_DIR_HOST=/path/to/z-image-trt-artifacts/engines/orin-nx-jp6-trt10.3/text-encoder-split-g4 \
 OUTPUT_DIR_HOST=/path/to/output \
 CUDA_HOST=/usr/local/cuda-12.6 \
 TRT_PY_HOST=/usr/lib/python3.10/dist-packages/tensorrt \
@@ -155,9 +175,20 @@ Start the service:
 DOCKER_IMAGE=sensecraft-missionpack.seeed.cn/solution/z-image-jetson-no-torch:latest \
 RESOLUTION=512 \
 MAX_CACHED_LAYERS=18 \
+MODEL_ROOT_HOST=$HOME/models \
+ENGINE_DIR_512_HOST=$HOME/models/z-image-trt-artifacts/engines/orin-nx-jp6-trt10.3/512-bf16 \
+TEXT_ENCODER_ENGINE_DIR_HOST=$HOME/models/z-image-trt-artifacts/engines/orin-nx-jp6-trt10.3/text-encoder-split-g4 \
+OUTPUT_DIR_HOST=$HOME/z-image-output \
+UPLOAD_DIR_HOST=$HOME/z-image-input/api-uploads \
 API_PORT=8000 \
 scripts/run/run_3drope_no_torch_api.sh
 ```
+
+`MODEL_ROOT_HOST`, `ENGINE_DIR_384_HOST`, `ENGINE_DIR_512_HOST`,
+`TEXT_ENCODER_ENGINE_DIR_HOST`, `OUTPUT_DIR_HOST`, and `UPLOAD_DIR_HOST` are
+host paths and can be changed to match your deployment. The launcher mounts
+`OUTPUT_DIR_HOST` into the container as `/output` and `UPLOAD_DIR_HOST` as
+`/uploads`.
 
 Keep the service at one uvicorn worker. The API uses an in-process lock as a
 simple FIFO queue: concurrent requests wait, and only one TensorRT generation
@@ -219,6 +250,19 @@ Successful response:
   "image_path": "/output/cat_scarf_512.png",
   "image_url": "/outputs/cat_scarf_512.png"
 }
+```
+
+The output is both saved on the host and served over HTTP. In the example above:
+
+```text
+Host file: $OUTPUT_DIR_HOST/cat_scarf_512.png
+HTTP URL:  http://<jetson-ip>:8000/outputs/cat_scarf_512.png
+```
+
+Download the generated image:
+
+```bash
+curl http://<jetson-ip>:8000/outputs/cat_scarf_512.png -o cat_scarf_512.png
 ```
 
 Failures return `success: false` with an `error` string.
