@@ -166,6 +166,46 @@ img2img 多了一条 VAE encode 路径，也多了一个重要参数：`strength
 |---|---|
 | ![384 reference cat](../media/text2img-384.png) | ![384 img2img red scarf cat](../media/img2img-red-scarf-384.png) |
 
+后来我们又用一张真实户外山谷照片做文章开头的导入图。这个过程比红围巾猫更能说明问题：真实输入不一定是模型喜欢的尺寸，也不一定一次 prompt 就能得到想要的视觉效果。
+
+![Original wide mountain input](../media/article/mountain-original-wide.jpg)
+
+原图是一个 `3220x1392` 的宽幅照片，而当前服务使用固定 `512x512` engine。第一版直接把宽图送进 img2img，结果画面被压成方图，山体比例明显不对，而且 `strength=0.6` 太保守，prompt 中的“机器人视角”几乎没有体现出来。
+
+![Squashed first mountain img2img attempt](../media/article/mountain-img2img-squashed-s06.png)
+
+这不是模型本身突然变差，而是输入预处理和 engine shape 的问题。固定 512 engine 需要方图输入。我们随后先做了中心方形裁切，保留山谷、道路和远山结构，再继续生成。
+
+![Square mountain input used for img2img](../media/article/mountain-center-square-input.jpg)
+
+第二轮把 `strength` 提到 `0.78`，prompt 明确写“勇于探索未知的机器人”。这次变化很明显，但模型直接把一个机器人主体生成进画面里。它适合做“机器人探索未知”的宣传主视觉，却不是我们最初想要的“机器人第一视角”。
+
+![Robot character mountain attempt](../media/article/mountain-robot-character-s078.png)
+
+第三轮改成第一视角 prompt，强调 `first person autonomous machine camera view`，并禁止出现人物和机器人本体。结果保留了山谷结构，但机器视觉特征不够明显。
+
+![First-person mountain attempt](../media/article/mountain-pov-s072.png)
+
+我们继续加强 prompt，加入 `thermal camera and depth camera fusion`、`false color depth map`、`safe navigation route`，并把 `strength` 提到 `0.78`。输出质量不错，但仍然更像一张新的自然山谷摄影图，而不是稳定的机器人感知图。
+
+![Optimized first-person prompt attempt](../media/article/mountain-pov-optimized-s078.png)
+
+我们又试了更具体的技术视觉词，比如 `false color infrared thermal camera`、`satellite terrain analysis`、`topographic terrain map`。但 Z-Image 更倾向于重新生成一张自然山谷图，而不是稳定叠出红外、深度图、HUD、路径线这类精确视觉符号。
+
+![False-color infrared attempt](../media/article/mountain-infrared-attempt-s082.png)
+
+最后换成模型更容易理解的常见风格，比如 `anime background concept art`。这类风格迁移明显很多，但也带来新的问题：它可能主动加人物、改城市远景，构图不再严格忠于原图。
+
+![Anime concept art attempt](../media/article/mountain-anime-concept-s082.png)
+
+这个反复过程给我们的结论很实际：img2img 不是“上传图片 + 写一句 prompt”就稳定得到预期结果。工程上至少要处理三件事：
+
+- 输入尺寸要和当前 TensorRT engine 的静态 shape 匹配，否则会被压缩变形。
+- `strength` 控制原图保留程度，太低变化不明显，太高会改变主体和构图。
+- 对 HUD、深度图、路径规划线这类精确叠加符号，生成模型不一定稳定，必要时应该用可控后处理叠加。
+
+所以文章开头那张“机器人眼中的世界”，更合理的工程方案是：先用 Z-Image 做风格化或视觉重绘，再用确定性的后处理画出路径线、扫描点和轻量 HUD。这样既能体现边缘端生成模型的能力，也能保证表达足够准确。
+
 ## 最后做成了什么
 
 最终我们得到的是一个 no-PyTorch 的 TensorRT runtime：
