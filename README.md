@@ -382,6 +382,9 @@ See [docs/TRT_STATUS.md](docs/TRT_STATUS.md) for the full validated build and
 performance notes, and [docs/ARTIFACTS.md](docs/ARTIFACTS.md) for suggested
 ONNX/engine release layout.
 
+For a visual adaptation story with real success and failure images, see
+[docs/ARTICLE_Z_IMAGE_TENSORRT_JETSON.md](docs/ARTICLE_Z_IMAGE_TENSORRT_JETSON.md).
+
 For a newcomer-oriented checklist, see [docs/REPRODUCTION.md](docs/REPRODUCTION.md).
 
 ## Architecture

@@ -13,6 +13,27 @@ Z-Image-Turbo 是一个 6B 规模的 DiT 图像生成模型。它的生成效果
 
 所以我们的目标很直接：在 Jetson 上用 TensorRT 跑通 Z-Image-Turbo，并且把部署方式整理成一个可复现、可调用、可开源的工程。
 
+## 先用一张图理解 Z-Image 大致怎么工作
+
+Z-Image-Turbo 可以简单理解成一个“在 latent 空间里画图”的 diffusion transformer。
+
+如果是 text-to-image，流程大致是：
+
+1. prompt 先经过 tokenizer 和 text encoder，变成模型能理解的文本特征。
+2. 随机噪声 latent 作为起点。
+3. DiT denoise 主体按 step 一轮轮把噪声变成更清晰的图像 latent。
+4. VAE decoder 把 latent 解码成 RGB 图片。
+
+如果是 image-to-image，会多一条参考图路径：
+
+1. 参考图先经过 VAE encoder，变成 latent。
+2. 按 `strength` 对这个 latent 加噪。
+3. 再进入同一个 denoise 主体，结合 prompt 改写图像。
+
+这次 TensorRT 适配做的事情，就是把这些关键模块从 PyTorch runtime 里拆出来，变成一组可以在 Jetson 上加载的 TensorRT engine。
+
+![Z-Image-Turbo TensorRT runtime pipeline](../media/article/z-image-tensorrt-pipeline.svg)
+
 ## 最后做成了什么
 
 最终得到的是一个 no-PyTorch 的 TensorRT runtime：
@@ -66,6 +87,38 @@ scripts/run/run_3drope_no_torch_api.sh
 ```
 
 容器里统一挂载为 `/output` 和 `/uploads`，但 host 上放在哪里由用户自己决定。
+
+## 真实输出长什么样
+
+这类适配最容易让人误判的地方是：程序跑完了、文件也保存了，但图像不一定是对的。下面这些图都是适配过程中真实生成过的结果。
+
+### 失败样例 1：engine 能跑完，但 denoise 语义错了
+
+![Wrong noise refiner branch output](../media/article/failure-noise-refiner-wrong-branch.png)
+
+这张图的问题不是“审美不好”，而是模型基本没有完成有效 denoise，只剩下彩色噪声。原因是 `noise_refiner` 的 ONNX 导出分支和真实 PyTorch 调用路径不一致。
+
+Z-Image basic mode 实际走的是全局 `adaln_input` 调制；旧 TensorRT export 走成了 `noise_mask / t_noisy / t_clean` 分支。engine 可以构建，也可以推理，但语义已经错了。
+
+### 失败样例 2：VAE decoder 数值异常，输出黑图
+
+![VAE FP16 black output](../media/article/failure-vae-fp16-black.png)
+
+这张黑图来自早期 VAE TensorRT 版本。单看服务状态，它也可能是“成功生成了 png”；但实际是 VAE decoder 的 FP16 构建路径在 Orin NX 上出现数值异常，最终 RGB 几乎全被压成黑色。
+
+后续处理方式是改用 BF16 VAE decoder，并在调试阶段加入 tensor 统计检查，避免只靠肉眼看最终图。
+
+### 修复后：512 text-to-image 正常输出
+
+![Fixed TensorRT 512 output](../media/article/success-512-refiner-fixed.png)
+
+修复 `noise_refiner` 导出输入后，512 TensorRT 输出恢复成正常图像：主体、窗台、光照和毛发结构都能稳定生成。
+
+### 当前 no-PyTorch runtime：512 输出样例
+
+![Final no-PyTorch 512 output](../media/article/success-512-final-runtime.png)
+
+这是后续迁移到 no-PyTorch runtime 后的 512 输出样例。它不是为了和云端大 GPU 比速度，而是验证同一套 TensorRT engines、VAE、text encoder、scheduler 和 API wrapper 可以在 Jetson 上闭环跑通。
 
 ## 我们具体做了哪些事情
 

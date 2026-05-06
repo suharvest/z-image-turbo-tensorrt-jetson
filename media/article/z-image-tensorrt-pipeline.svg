@@ -1,0 +1,83 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720" role="img" aria-labelledby="title desc">
+  <title id="title">Z-Image-Turbo TensorRT runtime pipeline</title>
+  <desc id="desc">A high-level pipeline diagram showing prompt and optional reference image inputs, TensorRT text encoder, VAE encoder, latent denoise transformer engines, VAE decoder, and final PNG output on Jetson.</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 12 12" refX="10" refY="6" markerWidth="10" markerHeight="10" orient="auto">
+      <path d="M 0 1 L 10 6 L 0 11 z" fill="#1f2937"/>
+    </marker>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="130%">
+      <feDropShadow dx="0" dy="8" stdDeviation="8" flood-color="#111827" flood-opacity="0.12"/>
+    </filter>
+    <style>
+      .bg { fill: #f8fafc; }
+      .band { fill: #eef2ff; }
+      .box { fill: #ffffff; stroke: #cbd5e1; stroke-width: 2; rx: 18; filter: url(#shadow); }
+      .engine { fill: #ecfeff; stroke: #0891b2; }
+      .optional { fill: #fff7ed; stroke: #f97316; }
+      .cache { fill: #f0fdf4; stroke: #16a34a; }
+      .label { font: 700 24px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #0f172a; }
+      .text { font: 18px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #334155; }
+      .small { font: 15px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #475569; }
+      .tiny { font: 13px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #64748b; }
+      .arrow { stroke: #1f2937; stroke-width: 3; fill: none; marker-end: url(#arrow); }
+      .dashed { stroke-dasharray: 8 8; }
+      .chip { fill: #0f172a; }
+      .chipText { font: 700 14px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #ffffff; }
+    </style>
+  </defs>
+
+  <rect class="bg" x="0" y="0" width="1280" height="720"/>
+  <rect class="band" x="52" y="66" width="1176" height="588" rx="28"/>
+  <text class="label" x="72" y="42">Z-Image-Turbo on Jetson: from diffusion pipeline to TensorRT service</text>
+
+  <rect class="box" x="80" y="120" width="190" height="116"/>
+  <text class="label" x="108" y="164">Prompt</text>
+  <text class="text" x="108" y="198">text input</text>
+
+  <rect class="box optional" x="80" y="338" width="190" height="126"/>
+  <text class="label" x="108" y="382">Image</text>
+  <text class="text" x="108" y="416">optional ref</text>
+  <text class="small" x="108" y="442">img2img only</text>
+
+  <rect class="box engine" x="342" y="112" width="210" height="132"/>
+  <text class="label" x="370" y="156">Text encoder</text>
+  <text class="text" x="370" y="190">split TRT engines</text>
+  <text class="small" x="370" y="218">tokenizers + TensorRT</text>
+
+  <rect class="box optional" x="342" y="332" width="210" height="138"/>
+  <text class="label" x="370" y="376">VAE encoder</text>
+  <text class="text" x="370" y="410">reference image</text>
+  <text class="small" x="370" y="438">strength controls noise</text>
+
+  <rect class="box engine" x="624" y="170" width="272" height="220"/>
+  <text class="label" x="658" y="214">Denoise core</text>
+  <text class="text" x="658" y="252">30 DiT layers</text>
+  <text class="text" x="658" y="284">context / noise refiner</text>
+  <text class="text" x="658" y="316">3D RoPE + scheduler</text>
+  <rect class="chip" x="658" y="342" width="182" height="30" rx="15"/>
+  <text class="chipText" x="674" y="363">4 to 8 denoise steps</text>
+
+  <rect class="box cache" x="624" y="448" width="272" height="112"/>
+  <text class="label" x="658" y="492">Runtime reuse</text>
+  <text class="text" x="658" y="526">engine cache + buffers</text>
+
+  <rect class="box engine" x="970" y="202" width="210" height="132"/>
+  <text class="label" x="1000" y="246">VAE decoder</text>
+  <text class="text" x="1000" y="280">latent to RGB</text>
+  <text class="small" x="1000" y="308">TensorRT BF16</text>
+
+  <rect class="box" x="970" y="420" width="210" height="116"/>
+  <text class="label" x="1000" y="464">PNG output</text>
+  <text class="text" x="1000" y="498">/outputs/file.png</text>
+
+  <path class="arrow" d="M270 178 L330 178"/>
+  <path class="arrow" d="M552 178 C590 178 590 242 624 242"/>
+  <path class="arrow dashed" d="M270 402 L330 402"/>
+  <path class="arrow dashed" d="M552 402 C590 402 590 334 624 334"/>
+  <path class="arrow" d="M896 268 L958 268"/>
+  <path class="arrow" d="M1075 334 L1075 408"/>
+  <path class="arrow dashed" d="M760 448 L760 402"/>
+
+  <text class="tiny" x="80" y="612">Key adaptation: PyTorch modules are exported to ONNX, built into per-target TensorRT engines, then called by a no-PyTorch runtime.</text>
+  <text class="tiny" x="80" y="638">Why fixed 384 / 512 modes: TensorRT engines are built for static shapes, which keeps Jetson memory and performance predictable.</text>
+</svg>
