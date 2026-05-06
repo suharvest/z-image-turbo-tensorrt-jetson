@@ -8,16 +8,21 @@
 Accelerating Z-Image-Turbo (6B DiT, 30 transformer layers) on NVIDIA Jetson Orin NX (16GB RAM) via TensorRT 10.3.
 
 ## Latest Result
-As of 2026-05-05, the no-PyTorch runtime path supports both 384x384 text-to-image
-and 384x384 img2img on orin-nx from a 413MB runtime image.
+As of 2026-05-06, the no-PyTorch runtime path supports 384x384 and 512x512
+text-to-image/img2img on orin-nx from a 428MB runtime image.
 
 Validated no-PyTorch run on orin-nx:
 - Local image: `z-image-jetson-no-torch:latest`
 - Published image: `sensecraft-missionpack.seeed.cn/solution/z-image-jetson-no-torch:latest`
-- Published digest: `sha256:e328d15da5110288dc0341ffa929e983fbd861c6c7ea82c6c185f5d3025542a1`
-- Image size: 413MB
+- Published digest: `sha256:9cbcb5a2df638f70f4cfc60c68f7ed6f88fc4984bba9491efc451415787eadeb`
+- Image size: 428MB
 - Runtime imports: TensorRT Python, CUDA Runtime through `ctypes`, NumPy, Pillow, tokenizers
 - Runtime does not import: PyTorch, diffusers, transformers
+- HTTP API: `GET /health`, `POST /generate`, `POST /generate_json`. The API
+  serializes requests and runs the TensorRT pipeline in a child process per
+  request so CUDA/TensorRT memory is released after each generation. Keep uvicorn
+  at one worker; multiple workers or containers can run concurrent generations
+  and OOM the Jetson.
 - Resolution: 384x384
 - Steps: 4
 - `MAX_CACHED_LAYERS=30`
@@ -52,6 +57,14 @@ Validated 512 no-PyTorch runs on orin-nx:
   - Output: `/home/harvest/z-image-output/output_512_no_torch_img2img_cast.png`
   - Output md5 after pull: `34b6b00bdcdb11072669ddea8c9e4de1`
 
+Validated HTTP API smoke tests on orin-nx:
+- Text-to-image via `/generate_json`, 512, 4 steps: 118.648s total, 78.3s TRT
+  - Output: `/home/harvest/z-image-output/api_smoke_512_json.png`
+  - Output md5 after pull: `ab054426e1e21903d69f39a68521d9bd`
+- Img2img via `/generate_json`, 512, 4 steps, strength 0.65: 86.276s total, 46.4s TRT
+  - Output: `/home/harvest/z-image-output/api_smoke_512_img2img_json.png`
+  - Output md5 after pull: `d6dcab8d2f5984cf1c3f2179838b4fef`
+
 The no-PyTorch path caches all 30 denoise layer engines in 384 mode on Orin NX 16GB. This became viable after removing PyTorch/diffusers/transformers runtime residency and reusing two TensorRT layer output buffers. Text encoder split engines are still loaded group-by-group; VAE decoder is loaded at decode time.
 
 For no-PyTorch img2img, the default launcher keeps VAE encode and denoise in one
@@ -78,12 +91,12 @@ Validated outputs on orin-nx:
 | Runtime | Image size | Layer cache | Total wall time | TRT denoise | Visual result |
 |---|---:|---:|---:|---:|---|
 | PyTorch-buffer TRT runtime | 11.7GB | 23 | 101.2s | 36.2s | Correct |
-| no-PyTorch runtime | 413MB | sequential load | 114.0s | 74.1s | Correct |
-| no-PyTorch runtime | 413MB | 23 | 105.6s | 63.8s | Correct |
-| no-PyTorch runtime | 413MB | 30 | 92.8s | 56.2s | Correct |
-| no-PyTorch img2img | 413MB | 18 | 123.1s | 86.9s | Correct |
-| no-PyTorch 512 text-to-image | 413MB | 18 | 117.4s | 80.1s | Correct |
-| no-PyTorch 512 img2img | 413MB | 18 | 129.7s | 91.6s | Correct |
+| no-PyTorch runtime | 428MB | sequential load | 114.0s | 74.1s | Correct |
+| no-PyTorch runtime | 428MB | 23 | 105.6s | 63.8s | Correct |
+| no-PyTorch runtime | 428MB | 30 | 92.8s | 56.2s | Correct |
+| no-PyTorch img2img | 428MB | 18 | 123.1s | 86.9s | Correct |
+| no-PyTorch 512 text-to-image | 428MB | 18 | 117.4s | 80.1s | Correct |
+| no-PyTorch 512 img2img | 428MB | 18 | 129.7s | 91.6s | Correct |
 
 The 30-layer cache is validated only for 384 mode on Orin NX 16GB. 512 mode is
 validated with 18 cached layers. 8GB Orin Nano should not assume this memory
@@ -287,7 +300,7 @@ VAE Decoder(PyTorch fallback or TensorRT) → image [H,W,3]
 | export_all_layers_fp32_adaln.py | wsl2:/home/harve/trt-work/ | ONNX export with all fixes |
 | pipeline_trt_v2.py | local:scripts/ | TRT pipeline (cached loading) |
 | pipeline_trt_no_torch.py | local:scripts/run/ | Experimental no-PyTorch TensorRT text-to-image and img2img runtime |
-| Dockerfile.runtime-jetson-no-torch | local:docker/ | 413MB no-PyTorch runtime image recipe |
+| Dockerfile.runtime-jetson-no-torch | local:docker/ | 428MB no-PyTorch runtime image recipe |
 | full_25.py | orin-nx:/tmp/ | No-cache TRT pipeline |
 | build_new_engines.sh | orin-nx:/tmp/ | Batch TRT engine build |
 | check_scale.py | orin-nx:/tmp/ | PT vs TRT scale comparison |

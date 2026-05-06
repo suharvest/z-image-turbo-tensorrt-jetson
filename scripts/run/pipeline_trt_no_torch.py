@@ -550,15 +550,16 @@ def main():
     steps = int(os.environ.get("NUM_STEPS", "4"))
     init_image = os.environ.get("INIT_IMAGE") or None
     strength = float(os.environ.get("STRENGTH", "0.6"))
+    seed = int(os.environ.get("SEED", "42"))
     pipe = NoTorchPipeline()
     if os.environ.get("IMG2IMG_ENCODE_ONLY", "0") == "1":
         if not init_image:
             raise ValueError("IMG2IMG_ENCODE_ONLY=1 requires INIT_IMAGE")
         init_latent_path = os.environ.get("INIT_LATENT_PATH", "/output/init_latent_no_torch.npz")
-        pipe.save_img2img_latent(init_image, strength, steps, seed=42, output_path=init_latent_path)
+        pipe.save_img2img_latent(init_image, strength, steps, seed=seed, output_path=init_latent_path)
         return
     t0 = time.time()
-    image = pipe.run(prompt, steps=steps, seed=42, init_image=init_image, strength=strength)
+    image = pipe.run(prompt, steps=steps, seed=seed, init_image=init_image, strength=strength)
     output_path = os.environ.get("OUTPUT_PATH", "/output/output_no_torch.png")
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
     Image.fromarray((image * 255).astype(np.uint8)).save(output_path)

@@ -143,6 +143,93 @@ to run the validated 512 path.
 - `0.6-0.7`: good prompt/edit balance
 - `0.8+`: larger semantic changes, more drift
 
+## HTTP API
+
+The no-PyTorch runtime image can also run as a small HTTP service. The API runs
+one request at a time and launches the TensorRT pipeline in a child process per
+request so CUDA/TensorRT memory is released after each generation.
+
+Start the service:
+
+```bash
+DOCKER_IMAGE=sensecraft-missionpack.seeed.cn/solution/z-image-jetson-no-torch:latest \
+RESOLUTION=512 \
+MAX_CACHED_LAYERS=18 \
+API_PORT=8000 \
+scripts/run/run_3drope_no_torch_api.sh
+```
+
+Keep the service at one uvicorn worker. The API uses an in-process lock as a
+simple FIFO queue: concurrent requests wait, and only one TensorRT generation
+runs at a time. Running multiple workers or multiple containers on one Jetson
+can start multiple generations and OOM the device.
+
+Health check:
+
+```bash
+curl http://<jetson-ip>:8000/health
+```
+
+Text-to-image:
+
+```bash
+curl -X POST http://<jetson-ip>:8000/generate \
+  -F 'prompt=A cute orange tabby cat sitting on a sunny windowsill, photorealistic' \
+  -F 'num_steps=4' \
+  -F 'output_name=cat_512.png'
+```
+
+Img2img with an uploaded reference image:
+
+```bash
+curl -X POST http://<jetson-ip>:8000/generate \
+  -F 'prompt=A cute orange tabby cat wearing a small red scarf, photorealistic' \
+  -F 'image=@/path/to/reference.png' \
+  -F 'num_steps=8' \
+  -F 'strength=0.65' \
+  -F 'output_name=cat_scarf_512.png'
+```
+
+JSON call when the reference image is already visible inside the container:
+
+```bash
+curl -X POST http://<jetson-ip>:8000/generate_json \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "prompt": "A cute orange tabby cat wearing a small red scarf, photorealistic",
+    "image_path": "/uploads/reference.png",
+    "num_steps": 8,
+    "strength": 0.65,
+    "output_name": "cat_scarf_512.png"
+  }'
+```
+
+Successful response:
+
+```json
+{
+  "success": true,
+  "mode": "img2img",
+  "resolution": 512,
+  "num_steps": 8,
+  "strength": 0.65,
+  "seed": 42,
+  "elapsed_seconds": 129.7,
+  "trt_seconds": 91.6,
+  "image_path": "/output/cat_scarf_512.png",
+  "image_url": "/outputs/cat_scarf_512.png"
+}
+```
+
+Failures return `success: false` with an `error` string.
+
+Validated API smoke tests on Orin NX 16GB:
+
+| Endpoint | Mode | Settings | Result |
+|---|---|---|---|
+| `/generate_json` | text2img | 512, 4 steps | `success:true`, 118.648s total, 78.3s TRT |
+| `/generate_json` | img2img | 512, 4 steps, strength 0.65 | `success:true`, 86.276s total, 46.4s TRT |
+
 ## Repository Layout
 
 ```text
@@ -319,7 +406,7 @@ scripts/run/run_3drope_no_torch.sh
 The pushed image digest is:
 
 ```text
-sha256:e328d15da5110288dc0341ffa929e983fbd861c6c7ea82c6c185f5d3025542a1
+sha256:9cbcb5a2df638f70f4cfc60c68f7ed6f88fc4984bba9491efc451415787eadeb
 ```
 
 Build the no-PyTorch runtime locally if you need to modify the image:

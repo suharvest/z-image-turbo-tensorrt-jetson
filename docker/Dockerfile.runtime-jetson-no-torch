@@ -17,8 +17,15 @@ RUN python3 -m pip install --no-cache-dir --upgrade pip && \
     python3 -m pip install --no-cache-dir \
       numpy \
       pillow \
-      tokenizers
+      tokenizers \
+      fastapi \
+      uvicorn \
+      python-multipart
 
 WORKDIR /workspace
 
 COPY scripts/run/pipeline_trt_no_torch.py /workspace/pipeline_trt_no_torch.py
+COPY scripts/run/api_server_no_torch.py /workspace/api_server_no_torch.py
+
+EXPOSE 8000
+CMD ["uvicorn", "api_server_no_torch:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]
