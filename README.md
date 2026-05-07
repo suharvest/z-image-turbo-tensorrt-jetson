@@ -1,21 +1,40 @@
 # Z-Image-Turbo TensorRT for Jetson
 
-Z-Image-Turbo on Jetson Orin NX: **384px in ~73s**, **512px in ~100s** with TensorRT BF16.
+Small image. Fast edge inference. Simple Jetson deployment for Z-Image-Turbo.
+
+Run the 6B [Z-Image-Turbo](https://huggingface.co/Tongyi-MAI/Z-Image-Turbo)
+image model locally on NVIDIA Jetson Orin NX with prebuilt TensorRT artifacts,
+a **428MB** runtime image, and a ready-to-use HTTP API.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 ![Jetson Orin NX](https://img.shields.io/badge/Jetson-Orin%20NX-green)
 ![TensorRT](https://img.shields.io/badge/TensorRT-BF16-blue)
 ![Z--Image--Turbo](https://img.shields.io/badge/Z--Image--Turbo-6B-purple)
+![Runtime Image](https://img.shields.io/badge/runtime-428MB-brightgreen)
 
-This repository contains a reproducible ONNX -> TensorRT pipeline for running
-[Tongyi-MAI/Z-Image-Turbo](https://huggingface.co/Tongyi-MAI/Z-Image-Turbo)
-locally on NVIDIA Jetson Orin NX. It exports the Z-Image transformer into
-static-shape BF16 TensorRT engines, runs text-to-image and img2img inference,
-and documents the memory/performance tradeoffs needed to fit a 6B image model
-on a 16GB edge device.
+This project packages the hard parts of edge image generation:
 
-> Status: validated on **Jetson Orin NX 16GB**. Orin Nano / 8GB devices are not
-> validated yet and should be treated as experimental.
+- **Small runtime**: published no-PyTorch Docker image is about **428MB**.
+- **High edge performance**: fastest validated path reaches **384px in ~73s** and **512px in ~100s** on Orin NX 16GB.
+- **Simple deployment**: pull the runtime image, download HF artifacts, start the API.
+- **Text-to-image and img2img**: generate from text or edit a reference image with a prompt.
+- **Reproducible conversion path**: export ONNX and rebuild TensorRT engines when you need to.
+
+> Status: validated on **Jetson Orin NX 16GB**, JetPack 6, TensorRT 10.3.
+> Orin Nano / 8GB devices are not validated yet and should be treated as experimental.
+
+## Why This Repo
+
+Running a large image model on Jetson usually means a large Python/PyTorch
+environment, heavy memory pressure, and a long model-conversion trail. This repo
+focuses on the deployable result:
+
+| Goal | Result |
+|---|---|
+| Small runtime image | `428MB` no-PyTorch Jetson image |
+| High edge performance | fastest path: `384x384` in ~73s, `512x512` in ~100s |
+| Simple deployment | Docker launcher + HTTP API |
+| Reproducible artifacts | HF-hosted TensorRT engines and local rebuild scripts |
 
 ## Demo
 
@@ -26,18 +45,27 @@ on a 16GB edge device.
 The img2img example uses the left image as a reference and the prompt
 `wearing a small red scarf around its neck`.
 
-## What Works
+## What You Get
 
-- Text-to-image inference at 384x384 and 512x512
-- Z-Image img2img via VAE encode + FlowMatch noise scaling
-- Static-shape TensorRT BF16 engines for 384 and 512 modes
-- Layer-engine cache tuning for Jetson Orin NX 16GB
-- Basic-mode `noise_refiner` and `context_refiner` parity with diffusers
-- Export scripts for transformer layers, refiners, and pre/post processors
+- Ready-to-run HTTP API for text-to-image and img2img.
+- Published Jetson runtime image: `sensecraft-missionpack.seeed.cn/solution/z-image-jetson-no-torch:latest`.
+- Published TensorRT engine artifacts on Hugging Face:
+  `harvestsu/z-image-turbo-jetson-trt-artifacts`.
+- Static-shape BF16 TensorRT engines for 384 and 512 modes.
+- Layer-engine cache tuning for Jetson Orin NX 16GB.
+- Export scripts for transformer layers, refiners, VAE, and text encoder.
+- Engineering notes for failures, memory limits, and correctness checks.
 
 ## Performance
 
 Measured on Jetson Orin NX 16GB, JetPack 6, TensorRT 10.3, BF16 engines.
+
+There are two useful runtime profiles:
+
+| Profile | Best for | Runtime image | 512 text-to-image |
+|---|---|---:|---:|
+| Fastest validated path | Benchmarking / maximum speed | Larger PyTorch-capable image | ~100.2s |
+| Slim deployment path | Small image + HTTP API | ~428MB no-PyTorch image | ~117.4s |
 
 | Mode | Default steps | Total time | TRT denoise | Notes |
 |---|---:|---:|---:|---|
@@ -59,33 +87,77 @@ Cache limits on Orin NX 16GB:
 
 ## Quickstart
 
-This repo does not commit model weights, ONNX files, or TensorRT engines to
-normal git because each resolution is roughly 12GB of generated artifacts. You
-can reproduce them from the public upstream model, or publish/download them from
-the Hugging Face artifact repo at
-`harvestsu/z-image-turbo-jetson-trt-artifacts`. See
-[docs/ARTIFACTS.md](docs/ARTIFACTS.md).
+This is the fastest path when you want to run the API on a Jetson that already
+has the Z-Image model folder under `$HOME/models/z-image-turbo-fp8-diffusers`.
 
-Download the published runtime artifacts on the Jetson host:
+1. Download the prebuilt TensorRT artifacts:
 
 ```bash
 hf download harvestsu/z-image-turbo-jetson-trt-artifacts \
   --local-dir "$HOME/models/z-image-trt-artifacts"
 ```
 
-The recommended host layout is:
+2. Pull the small runtime image:
+
+```bash
+docker pull sensecraft-missionpack.seeed.cn/solution/z-image-jetson-no-torch:latest
+```
+
+3. Start the 512px HTTP API:
+
+```bash
+DOCKER_IMAGE=sensecraft-missionpack.seeed.cn/solution/z-image-jetson-no-torch:latest \
+RESOLUTION=512 \
+MAX_CACHED_LAYERS=18 \
+MODEL_ROOT_HOST=$HOME/models \
+ENGINE_DIR_512_HOST=$HOME/models/z-image-trt-artifacts/engines/orin-nx-jp6-trt10.3/512-bf16 \
+TEXT_ENCODER_ENGINE_DIR_HOST=$HOME/models/z-image-trt-artifacts/engines/orin-nx-jp6-trt10.3/text-encoder-split-g4 \
+OUTPUT_DIR_HOST=$HOME/z-image-output \
+UPLOAD_DIR_HOST=$HOME/z-image-input/api-uploads \
+API_PORT=8000 \
+scripts/run/run_3drope_no_torch_api.sh
+```
+
+4. Generate an image:
+
+```bash
+curl -X POST http://<jetson-ip>:8000/generate \
+  -F 'prompt=A cute orange tabby cat sitting on a sunny windowsill, photorealistic' \
+  -F 'num_steps=4' \
+  -F 'output_name=cat_512.png'
+```
+
+The output is saved on the Jetson host under `$HOME/z-image-output` and served
+from `http://<jetson-ip>:8000/outputs/cat_512.png`.
+
+### Artifact Layout
+
+This repo does not commit model weights, ONNX files, or TensorRT engines to
+normal git. The runtime image also does not contain those files. The expected
+deployment layout is:
 
 ```text
 $HOME/models/
-  z-image-turbo-fp8-diffusers/
-  z-image-trt-artifacts/
+  z-image-turbo-fp8-diffusers/              # model weights/config/tokenizer
+  z-image-trt-artifacts/                    # HF artifact download
     engines/orin-nx-jp6-trt10.3/
       384-bf16/
       512-bf16/
       text-encoder-split-g4/
 ```
 
-For a host that already has the model and engines in the expected locations:
+You can reproduce the artifacts from the public upstream model, or download the
+published TensorRT artifacts from Hugging Face:
+
+```bash
+hf download harvestsu/z-image-turbo-jetson-trt-artifacts \
+  --local-dir "$HOME/models/z-image-trt-artifacts"
+```
+
+See [docs/ARTIFACTS.md](docs/ARTIFACTS.md) for what belongs in GitHub, what
+belongs in Hugging Face artifacts, and what stays local.
+
+### Script Runtime
 
 ```bash
 # 384x384 text-to-image, default 4 steps
