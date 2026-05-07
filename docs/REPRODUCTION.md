@@ -28,8 +28,8 @@ docker group according to your system policy.
 
 ## 2. Prepare the runtime image
 
-The runtime image only contains dependencies. It does not contain model weights
-or engines.
+The runtime image only contains dependencies. It does not contain model weights,
+runtime config files, or engines.
 
 For the validated no-PyTorch 384 text-to-image path, pull the published
 MissionPack image:
@@ -43,6 +43,26 @@ Published digest:
 
 ```text
 sha256:9cbcb5a2df638f70f4cfc60c68f7ed6f88fc4984bba9491efc451415787eadeb
+```
+
+For the no-PyTorch runtime, download the minimal upstream config/tokenizer files
+on the Jetson. Full PyTorch weights are not needed for the published TensorRT
+runtime path:
+
+```bash
+hf download Tongyi-MAI/Z-Image-Turbo \
+  --local-dir "$HOME/models/z-image-turbo-fp8-diffusers" \
+  --include "model_index.json" \
+  --include "tokenizer/*" \
+  --include "scheduler/scheduler_config.json" \
+  --include "vae/config.json"
+```
+
+Then download the published TensorRT artifacts:
+
+```bash
+hf download harvestsu/z-image-turbo-jetson-trt-artifacts \
+  --local-dir "$HOME/models/z-image-trt-artifacts"
 ```
 
 Either use an existing Jetson PyTorch image:

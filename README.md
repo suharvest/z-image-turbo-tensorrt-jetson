@@ -87,23 +87,36 @@ Cache limits on Orin NX 16GB:
 
 ## Quickstart
 
-This is the fastest path when you want to run the API on a Jetson that already
-has the Z-Image model folder under `$HOME/models/z-image-turbo-fp8-diffusers`.
+This is the fastest path when you want to run the API on a Jetson. The
+no-PyTorch runtime uses TensorRT engines for inference, so it only needs a few
+small config/tokenizer files from the upstream model, not the full PyTorch
+weights.
 
-1. Download the prebuilt TensorRT artifacts:
+1. Download the minimal runtime config from the upstream model:
+
+```bash
+hf download Tongyi-MAI/Z-Image-Turbo \
+  --local-dir "$HOME/models/z-image-turbo-fp8-diffusers" \
+  --include "model_index.json" \
+  --include "tokenizer/*" \
+  --include "scheduler/scheduler_config.json" \
+  --include "vae/config.json"
+```
+
+2. Download the prebuilt TensorRT artifacts:
 
 ```bash
 hf download harvestsu/z-image-turbo-jetson-trt-artifacts \
   --local-dir "$HOME/models/z-image-trt-artifacts"
 ```
 
-2. Pull the small runtime image:
+3. Pull the small runtime image:
 
 ```bash
 docker pull sensecraft-missionpack.seeed.cn/solution/z-image-jetson-no-torch:latest
 ```
 
-3. Start the 512px HTTP API:
+4. Start the 512px HTTP API:
 
 ```bash
 DOCKER_IMAGE=sensecraft-missionpack.seeed.cn/solution/z-image-jetson-no-torch:latest \
@@ -118,7 +131,7 @@ API_PORT=8000 \
 scripts/run/run_3drope_no_torch_api.sh
 ```
 
-4. Generate an image:
+5. Generate an image:
 
 ```bash
 curl -X POST http://<jetson-ip>:8000/generate \
@@ -138,7 +151,7 @@ deployment layout is:
 
 ```text
 $HOME/models/
-  z-image-turbo-fp8-diffusers/              # model weights/config/tokenizer
+  z-image-turbo-fp8-diffusers/              # minimal config/tokenizer files
   z-image-trt-artifacts/                    # HF artifact download
     engines/orin-nx-jp6-trt10.3/
       384-bf16/
